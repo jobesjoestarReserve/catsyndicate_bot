@@ -1,29 +1,43 @@
+from html import escape
+
 from aiogram import Router, types
 from aiogram.filters import Command
+
 from database.db_manager import db
 from data.constants import CAT_STATUSES, CAT_CLASSES
+from services.game_utils import get_telegram_cat_name, is_broken_name
+from services.progression import format_progress_bar, get_life_xp_required, get_progress_percent
 
 router = Router()
+
 
 @router.message(Command("profile"))
 async def cmd_profile(message: types.Message):
     user = await db.get_user(message.from_user.id)
-    if not user: return await message.answer("Сначала /start")
+    if not user:
+        return await message.answer("Сначала /start")
 
-    status = CAT_STATUSES.get(user['life_stage'], "Ветеран")
-    # Предположим, в БД потом добавим колонку class_name
-    cat_class = CAT_CLASSES.get(user.get('class_name', 'none'))
-    
-    # Расчет прогресса (оставляем твою логику)
-    next_level_cost = user['life_stage'] * 500
-    progress = min(100, int((user['balance'] / next_level_cost) * 100))
-    bar = "🟩" * (progress // 10) + "⬜" * (10 - (progress // 10))
+    await db.touch_user(message.from_user.id)
+    cat_name = user["cat_name"]
+    telegram_name = get_telegram_cat_name(message)
+    if is_broken_name(cat_name) or cat_name != telegram_name:
+        cat_name = await db.update_cat_name(message.from_user.id, telegram_name)
+
+    status = CAT_STATUSES.get(user["life_stage"], "Ветеран")
+    cat_class = CAT_CLASSES.get(user["cat_class"] or "none")
+
+    life_xp = user["life_xp"] or 0
+    required_xp = get_life_xp_required(user["life_stage"])
+    progress = get_progress_percent(user["life_stage"], life_xp)
+    bar = format_progress_bar(progress)
+    progress_text = "MAX" if user["life_stage"] >= 9 else f"{life_xp}/{required_xp} XP"
 
     text = (
-        f"👤 <b>Имя:</b> {user['cat_name']}\n"
-        f"🎗 <b>Статус:</b> {status}\n"
+        f"👤 <b>Имя:</b> {escape(cat_name)}\n"
+        f"🏷 <b>Статус:</b> {status}\n"
         f"🎭 <b>Класс:</b> {cat_class}\n"
         f"💰 <b>Баланс:</b> {user['balance']} 🐟\n\n"
-        f"📈 <b>Опыт жизни:</b>\n<code>{bar}</code> {progress}%"
+        f"📈 <b>Опыт жизни:</b>\n<code>{bar}</code> {progress}% — <b>{progress_text}</b>\n"
+        f"Расти: <code>/grow</code>"
     )
     await message.answer(text, parse_mode="HTML")
