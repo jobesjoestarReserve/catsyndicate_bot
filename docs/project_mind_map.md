@@ -459,3 +459,5 @@ mindmap
 | `code_searcher_mini` | `C:\Users\jobesjoestar\.codex\agents\code_searcher_mini.toml` | read-only sub-agent для быстрых вопросов по коду, call graph, символам, потокам и evidence-backed findings |
 
 Регистрация агента добавлена в `C:\Users\jobesjoestar\.codex\config.toml` блоком `[agents.code_searcher_mini]`.
+
+Переносимая копия лежит в проекте: `codex_agents/code_searcher_mini.toml`. Инструкция для установки на другой компьютер: `codex_agents/README.md`.

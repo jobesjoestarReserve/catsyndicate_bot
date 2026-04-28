@@ -1,0 +1,3 @@
+[agents.code_searcher_mini]
+description = "Read-only repository investigator for targeted code questions, call graphs, symbols, flows, and evidence-backed findings."
+config_file = "agents/code_searcher_mini.toml"
