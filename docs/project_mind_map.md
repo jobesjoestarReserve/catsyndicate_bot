@@ -451,3 +451,11 @@ mindmap
 | Банды | новые таблицы `clans`, `clan_members`, новый `handlers/clans.py` |
 | Вознесение | `life_stage = 9`, новая валюта, постоянные бонусы |
 | Глобальные рейтинги | `get_top_*` методы в `database/db_manager.py` |
+
+## Локальные Инструменты Codex
+
+| Инструмент | Где настроен | Для чего |
+|---|---|---|
+| `code_searcher_mini` | `C:\Users\jobesjoestar\.codex\agents\code_searcher_mini.toml` | read-only sub-agent для быстрых вопросов по коду, call graph, символам, потокам и evidence-backed findings |
+
+Регистрация агента добавлена в `C:\Users\jobesjoestar\.codex\config.toml` блоком `[agents.code_searcher_mini]`.
