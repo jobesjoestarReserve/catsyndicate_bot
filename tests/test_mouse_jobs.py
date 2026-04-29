@@ -101,6 +101,28 @@ class MouseJobTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(fake_db.job_type)
         self.assertEqual(len(fake_bot.messages), 2)
 
+    async def test_complete_mine_job_reports_bonus_mice(self):
+        fake_db = FakeDB()
+        fake_bot = FakeBot()
+        job = {"id": 3, "job_type": "mine", "user_id": 10, "chat_id": 20}
+        payload = {
+            "mice_returned": 4,
+            "mice_lost": 0,
+            "bonus_mice": 2,
+            "result_text": "Мыши привели стажеров.",
+            "resources": {"trash": 5},
+        }
+
+        with patch.object(mouse_jobs, "db", fake_db):
+            completed = await mouse_jobs.complete_mine_job(fake_bot, job, payload)
+
+        self.assertTrue(completed)
+        _, text, parse_mode = fake_bot.messages[-1]
+        self.assertEqual(parse_mode, "HTML")
+        self.assertIn("Критический успех подвала", text)
+        self.assertIn("Мыши привели стажеров.", text)
+        self.assertIn("Новые мыши: <b>+2</b>", text)
+
 
 if __name__ == "__main__":
     unittest.main()

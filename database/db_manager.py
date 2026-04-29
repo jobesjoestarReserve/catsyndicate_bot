@@ -6,6 +6,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+STARTING_MICE_COUNT = 3
+
+
 class DBManager:
     def __init__(self):
         self.url = os.getenv("DATABASE_URL")
@@ -29,7 +32,7 @@ class DBManager:
                     life_stage integer NOT NULL DEFAULT 1,
                     life_xp integer NOT NULL DEFAULT 0,
                     balance integer NOT NULL DEFAULT 100,
-                    mice_count integer NOT NULL DEFAULT 0,
+                    mice_count integer NOT NULL DEFAULT 3,
                     authority integer NOT NULL DEFAULT 0,
                     last_seen timestamp without time zone
                 )
@@ -97,8 +100,9 @@ class DBManager:
             )
             await conn.execute("UPDATE users SET cat_class = 'none' WHERE cat_class IS NULL")
             await conn.execute(
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS mice_count integer DEFAULT 0"
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS mice_count integer DEFAULT 3"
             )
+            await conn.execute("ALTER TABLE users ALTER COLUMN mice_count SET DEFAULT 3")
             await conn.execute("UPDATE users SET mice_count = 0 WHERE mice_count IS NULL")
             await conn.execute(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS balance integer DEFAULT 100"
@@ -816,8 +820,13 @@ class DBManager:
     async def register_user(self, user_id, name):
         async with self.pool.acquire() as conn:
             await conn.execute(
-                "INSERT INTO users (user_id, cat_name, life_stage, balance, last_seen, authority) VALUES ($1, $2, 1, 100, CURRENT_TIMESTAMP, 0)",
-                user_id, name
+                """
+                INSERT INTO users (user_id, cat_name, life_stage, balance, mice_count, last_seen, authority)
+                VALUES ($1, $2, 1, 100, $3, CURRENT_TIMESTAMP, 0)
+                """,
+                user_id,
+                name,
+                STARTING_MICE_COUNT,
             )
 
     async def update_cat_name(self, user_id, name):

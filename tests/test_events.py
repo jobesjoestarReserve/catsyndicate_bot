@@ -5,11 +5,22 @@ from tests.support import install_dependency_stubs
 install_dependency_stubs()
 
 from services.events import (  # noqa: E402
+    BOSS_EVENT_TYPES,
     EVENT_CONFIGS,
     format_event_status,
     get_event_action,
     get_event_title,
     normalize_event_type,
+)
+from data.texts import (  # noqa: E402
+    EVENT_BOSS_DEFEATED_TEXTS,
+    EVENT_BOSS_EXPIRED_TEXTS,
+    EVENT_BOSS_HIT_TEXTS,
+    EVENT_BUSY_TEXTS,
+    EVENT_EMPTY_TEXTS,
+    EVENT_GRAB_TEXTS,
+    EVENT_SPAWN_TEXTS,
+    MINE_CRITICAL_SUCCESS_TEXTS,
 )
 
 
@@ -25,8 +36,34 @@ class EventTests(unittest.TestCase):
 
     def test_event_actions_match_event_kind(self):
         self.assertEqual(get_event_action("boss"), "босс")
+        for event_type in BOSS_EVENT_TYPES:
+            with self.subTest(event_type=event_type):
+                self.assertEqual(get_event_action(event_type), "босс")
         self.assertEqual(get_event_action("fish_drop"), "контейнер")
         self.assertEqual(get_event_action("resource_drop"), "контейнер")
+
+    def test_event_text_pools_have_fifteen_variants(self):
+        for event_type, texts in EVENT_SPAWN_TEXTS.items():
+            with self.subTest(pool="spawn", event_type=event_type):
+                self.assertGreaterEqual(len(texts), 15)
+
+        for pool_name, pool in (
+            ("hit", EVENT_BOSS_HIT_TEXTS),
+            ("defeated", EVENT_BOSS_DEFEATED_TEXTS),
+            ("expired", EVENT_BOSS_EXPIRED_TEXTS),
+        ):
+            for event_type in ("boss", *BOSS_EVENT_TYPES):
+                with self.subTest(pool=pool_name, event_type=event_type):
+                    self.assertGreaterEqual(len(pool[event_type]), 15)
+
+        for pool_name, texts in (
+            ("grab", EVENT_GRAB_TEXTS),
+            ("empty", EVENT_EMPTY_TEXTS),
+            ("busy", EVENT_BUSY_TEXTS),
+            ("mine_critical_success", MINE_CRITICAL_SUCCESS_TEXTS),
+        ):
+            with self.subTest(pool=pool_name):
+                self.assertGreaterEqual(len(texts), 15)
 
     def test_event_configs_are_spawnable(self):
         for event_type, config in EVENT_CONFIGS.items():

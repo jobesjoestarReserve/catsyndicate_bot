@@ -80,6 +80,7 @@ async def complete_work_job(bot, job, payload):
 
 async def complete_mine_job(bot, job, payload):
     resources = payload.get("resources") or {}
+    bonus_mice = payload.get("bonus_mice") or 0
     result = await db.complete_mice_mining_job(
         job["id"],
         job["user_id"],
@@ -96,12 +97,17 @@ async def complete_mine_job(bot, job, payload):
         else "\nВсе добытчики вернулись, кроме чувства собственного достоинства."
     )
     resources_text = format_resources(resources)
+    title = "🌟 <b>Критический успех подвала!</b>" if bonus_mice else "⛏️ Мыши вернулись из подвала и принесли крафтовую добычу."
+    result_text = f"\n{payload.get('result_text')}\n" if payload.get("result_text") else "\n"
+    bonus_text = f"\nНовые мыши: <b>+{bonus_mice}</b> 🐭" if bonus_mice else ""
     await bot.send_message(
         job["chat_id"],
         (
-            "⛏️ Мыши вернулись из подвала и принесли крафтовую добычу.\n\n"
+            f"{title}"
+            f"{result_text}\n"
             f"{resources_text}\n"
             f"{lost_text}\n"
+            f"{bonus_text}\n"
             f"Мышей дома: <b>{result['mice_count']}</b>"
         ),
         parse_mode="HTML",

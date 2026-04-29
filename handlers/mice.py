@@ -6,7 +6,7 @@ from aiogram.filters import Command
 
 from database.db_manager import db
 from data.runtime_state import runtime_state
-from data.texts import WORK_CLASS_LABELS, WORK_CLASS_PROFILES
+from data.texts import MINE_CRITICAL_SUCCESS_TEXTS, WORK_CLASS_LABELS, WORK_CLASS_PROFILES
 from services.crafting import get_equipment_bonus
 from services.game_utils import format_cooldown, get_life_stage, touch_current_user
 from services.mouse_jobs import complete_due_mouse_jobs, format_job_duration
@@ -61,6 +61,12 @@ MINE_CLASS_RESOURCE_BONUS = {
     "support": 1,
     "warrior": 1,
     "thief": 0,
+    "assassin": 0,
+}
+MINE_CLASS_CRIT_BONUS = {
+    "support": 2,
+    "warrior": 1,
+    "thief": 1,
     "assassin": 0,
 }
 
@@ -230,6 +236,8 @@ def roll_mine_result(user, mice_sent: int):
     cat_class = user["cat_class"] or "none"
     resource_bonus = MINE_CLASS_RESOURCE_BONUS.get(cat_class, 0)
     resources = {name: 0 for name in RESOURCE_NAMES}
+    crit_chance = 4 + life_stage + MINE_CLASS_CRIT_BONUS.get(cat_class, 0)
+    outcome = "critical_success" if random.randint(1, 100) <= crit_chance else "success"
 
     for _ in range(mice_sent):
         primary = random.choice(tuple(RESOURCE_NAMES.keys()))
@@ -240,8 +248,23 @@ def roll_mine_result(user, mice_sent: int):
     loss_chance = max(4, 24 - life_stage * 2)
     if cat_class == "warrior":
         loss_chance = max(2, loss_chance - 4)
-    lost = sum(1 for _ in range(mice_sent) if random.randint(1, 100) <= loss_chance)
-    return {name: amount for name, amount in resources.items() if amount > 0}, mice_sent - lost, lost
+    if outcome == "critical_success":
+        lost = 0
+        bonus_mice = max(1, mice_sent // 4)
+        for name in resources:
+            resources[name] += max(1, mice_sent // 3)
+    else:
+        lost = sum(1 for _ in range(mice_sent) if random.randint(1, 100) <= loss_chance)
+        bonus_mice = 0
+
+    return {
+        "outcome": outcome,
+        "resources": {name: amount for name, amount in resources.items() if amount > 0},
+        "mice_returned": mice_sent - lost + bonus_mice,
+        "mice_lost": lost,
+        "bonus_mice": bonus_mice,
+        "result_text": random.choice(MINE_CRITICAL_SUCCESS_TEXTS) if bonus_mice else "",
+    }
 
 
 async def finish_due_jobs(message: types.Message, job_type: str, label: str):
@@ -404,7 +427,8 @@ async def cmd_send_mice(message: types.Message):
 
     equipped = await db.get_equipped_items(user_id)
     loot_bonus = get_equipment_bonus(equipped, "loot_bonus")
-    resources, mice_returned, mice_lost = roll_mine_result(user, mice_sent)
+    mine_result = roll_mine_result(user, mice_sent)
+    resources = mine_result["resources"]
     if loot_bonus:
         for name in resources:
             resources[name] += loot_bonus
@@ -418,8 +442,11 @@ async def cmd_send_mice(message: types.Message):
         "mine",
         {
             "mice_sent": mice_sent,
-            "mice_returned": mice_returned,
-            "mice_lost": mice_lost,
+            "mice_returned": mine_result["mice_returned"],
+            "mice_lost": mine_result["mice_lost"],
+            "bonus_mice": mine_result["bonus_mice"],
+            "outcome": mine_result["outcome"],
+            "result_text": mine_result["result_text"],
             "resources": resources,
         },
         complete_at,

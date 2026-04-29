@@ -27,7 +27,7 @@ from services.game_utils import (
 )
 from services.crafting import get_equipment_bonus
 from services.progression import get_grow_cost, get_life_xp_required, get_progress_percent
-from services.text_aliases import HUNT_ALIASES, MEOW_ALIASES, START_ALIASES, STATS_ALIASES, is_alias
+from services.text_aliases import HELP_ALIASES, HUNT_ALIASES, MEOW_ALIASES, RESET_ALIASES, START_ALIASES, STATS_ALIASES, is_alias
 from services.ui import main_menu_keyboard
 
 router = Router()
@@ -114,6 +114,38 @@ HUNT_CLASS_REWARD_BONUS = {
     "thief": 0,
     "warrior": 0,
 }
+
+
+def format_help_text() -> str:
+    return (
+        "🧭 <b>Помощь Синдиката</b>\n\n"
+        "<b>Профиль</b>\n"
+        "• <code>старт</code> — зарегистрироваться или открыть клавиатуру\n"
+        "• <code>мой котёнок</code> — профиль\n"
+        "• <code>досье</code> — шансы, баланс и прогресс\n"
+        "• <code>сбросить профиль</code> — начать заново\n\n"
+        "<b>Добыча</b>\n"
+        "• <code>мяу</code> — добыть рыбов\n"
+        "• <code>охота</code> — поймать мышей\n"
+        "• <code>работа</code> или <code>работа 5</code> — отправить мышей за рыбами\n"
+        "• <code>подвал</code> или <code>подвал 5</code> — отправить мышей за ресурсами\n"
+        "• <code>завершить работу</code> — проверить готовую работу\n"
+        "• <code>завершить подвал</code> — проверить готовый подвал\n\n"
+        "<b>Кузница</b>\n"
+        "• <code>инвентарь</code> — рыбов, мыши, ресурсы и предметы\n"
+        "• <code>кузница</code> — собрать расходники и броню\n"
+        "• <code>экипировка</code> — посмотреть надетую броню\n"
+        "• <code>надеть Шлем из фольги</code> — надеть предмет\n"
+        "• <code>использовать Валерьянка</code> — применить расходник\n\n"
+        "<b>Рост и драки</b>\n"
+        "• <code>расти</code> — попытка перейти к следующей жизни\n"
+        "• <code>укусить</code> ответом на сообщение — PvP\n"
+        "• <code>топ</code> — рейтинг авторитета\n\n"
+        "<b>События</b>\n"
+        "• <code>событие</code> — что сейчас происходит в чате\n"
+        "• <code>босс</code> — атаковать активного босса\n"
+        "• <code>контейнер</code> — забрать добычу из контейнера"
+    )
 
 def get_meow_chance(user) -> int:
     life_stage = get_life_stage(user)
@@ -209,9 +241,16 @@ async def cmd_start(message: types.Message):
         await message.answer_animation(
             animation=CATERPILLAR_ID,
             caption=(
-                f"🐱Добро пожаловать в Синдикат!\n\n"
-                f"Твой статус: {CAT_STATUSES[1]}\n"
-                "Добывай рыбов фразой «мяу» и расти в иерархии."
+                "🐱 <b>Добро пожаловать в Шерстяной Синдикат!</b>\n\n"
+                "Это чатовая кото-мафия про рыбов, мышей, подвал, кузницу, рост по девяти жизням и внезапные домашние катастрофы.\n\n"
+                f"Твой статус: <b>{CAT_STATUSES[1]}</b>\n"
+                "На старт тебе выдали <b>3</b> мыши для первых вылазок.\n\n"
+                "Что делать сначала:\n"
+                "1. <code>мяу</code> — добыть рыбов\n"
+                "2. <code>охота</code> — поймать мышей\n"
+                "3. <code>работа</code> или <code>подвал</code> — отправить мышей за добычей\n"
+                "4. <code>расти</code> — продвигаться к следующей жизни\n\n"
+                "Напиши <code>помощь</code>, если захочешь полный список действий."
             ),
             parse_mode="HTML",
             reply_markup=main_menu_keyboard(),
@@ -221,6 +260,17 @@ async def cmd_start(message: types.Message):
         cat_name = await sync_cat_name_if_needed(message, user)
         status = CAT_STATUSES.get(user['life_stage'], "Ветеран")
         await message.answer(f"Мияу, {status} {escape(cat_name)}!", reply_markup=main_menu_keyboard())
+
+
+@router.message(lambda message: is_alias(message.text, HELP_ALIASES))
+@router.message(Command("help"))
+async def cmd_help(message: types.Message):
+    await message.answer(
+        format_help_text(),
+        parse_mode="HTML",
+        reply_markup=main_menu_keyboard(),
+    )
+
 
 @router.message(F.text == "🐟 Мяу")
 @router.message(lambda message: is_alias(message.text, MEOW_ALIASES))
@@ -431,6 +481,7 @@ async def cmd_stats(message: types.Message):
     # Здесь можно прикрепить ту самую крутую картинку Синдиката
     await message.answer(text, parse_mode="HTML", reply_markup=main_menu_keyboard())
 
+@router.message(lambda message: is_alias(message.text, RESET_ALIASES))
 @router.message(Command("reset_me"))
 async def cmd_reset(message: types.Message):
     user_id = message.from_user.id

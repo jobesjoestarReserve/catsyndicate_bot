@@ -4,8 +4,10 @@ from services.text_aliases import (
     MINE_ALIASES,
     MINE_RETURN_ALIASES,
     PROFILE_ALIASES,
+    RESET_ALIASES,
     START_ALIASES,
     EQUIP_PREFIXES,
+    HELP_ALIASES,
     USE_ITEM_PREFIXES,
     WORK_ALIASES,
     WORK_RETURN_ALIASES,
@@ -27,6 +29,14 @@ class TextAliasTests(unittest.TestCase):
 
     def test_start_alias_accepts_plain_text_start(self):
         self.assertTrue(is_alias("Старт", START_ALIASES))
+
+    def test_help_alias_accepts_plain_text_help(self):
+        self.assertTrue(is_alias("Помощь", HELP_ALIASES))
+        self.assertTrue(is_alias("что делать", HELP_ALIASES))
+
+    def test_reset_alias_accepts_plain_text_reset(self):
+        self.assertTrue(is_alias("сброс", RESET_ALIASES))
+        self.assertTrue(is_alias("удалить профиль", RESET_ALIASES))
 
     def test_counted_alias_accepts_amount_suffix(self):
         self.assertTrue(is_alias_with_count("Работа 5", WORK_ALIASES))
