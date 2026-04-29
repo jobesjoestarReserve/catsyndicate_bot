@@ -23,7 +23,9 @@ from services.events import (
     roll_resource_grab,
     spawn_chat_event,
 )
+from services.crafting import get_equipment_bonus
 from services.game_utils import format_cooldown, touch_current_user
+from services.text_aliases import BOSS_ALIASES, EVENT_ALIASES, GRAB_ALIASES, is_alias
 
 router = Router()
 
@@ -57,6 +59,7 @@ def format_remaining_loot(event) -> str:
     return "Осталось в контейнере: " + (", ".join(resources) if resources else "<b>пусто</b>")
 
 
+@router.message(lambda message: is_alias(message.text, BOSS_ALIASES))
 @router.message(Command("bite_boss"))
 async def cmd_bite_boss(message: types.Message):
     user_id = message.from_user.id
@@ -78,7 +81,8 @@ async def cmd_bite_boss(message: types.Message):
             parse_mode="HTML",
         )
 
-    damage = roll_boss_damage(user)
+    equipped = await db.get_equipped_items(user_id)
+    damage = roll_boss_damage(user) + get_equipment_bonus(equipped, "damage_guard")
     result = await db.add_boss_damage(event["id"], user_id, damage)
     if not result:
         return await message.answer("🐾 Босс уже ушёл или спрятался за юридической формулировкой.")
@@ -107,6 +111,7 @@ async def cmd_bite_boss(message: types.Message):
     )
 
 
+@router.message(lambda message: is_alias(message.text, GRAB_ALIASES))
 @router.message(Command("grab"))
 async def cmd_grab(message: types.Message):
     user_id = message.from_user.id
@@ -128,8 +133,13 @@ async def cmd_grab(message: types.Message):
             parse_mode="HTML",
         )
 
-    fish = roll_fish_grab(user) if event["event_type"] == "fish_drop" else 0
+    equipped = await db.get_equipped_items(user_id)
+    loot_bonus = get_equipment_bonus(equipped, "loot_bonus")
+    fish = roll_fish_grab(user) + loot_bonus * 2 if event["event_type"] == "fish_drop" else 0
     resources = roll_resource_grab(user) if event["event_type"] == "resource_drop" else {}
+    if resources and loot_bonus:
+        for name in resources:
+            resources[name] += loot_bonus
     result = await db.grab_event_loot(event["id"], user_id, fish, resources)
     if not result:
         return await message.answer("📦 Контейнер уже испарился из бухгалтерии Синдиката.")
@@ -201,6 +211,7 @@ async def cmd_events(message: types.Message):
     await message.answer("📋 <b>Активные события</b>\n\n" + "\n".join(lines), parse_mode="HTML")
 
 
+@router.message(lambda message: is_alias(message.text, EVENT_ALIASES))
 @router.message(Command("event"))
 async def cmd_event(message: types.Message):
     event = await db.get_active_event(message.chat.id)

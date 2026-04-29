@@ -7,10 +7,13 @@ from database.db_manager import db
 from data.constants import CAT_STATUSES, CAT_CLASSES
 from services.game_utils import get_telegram_cat_name, is_broken_name
 from services.progression import format_progress_bar, get_life_xp_required, get_progress_percent
+from services.text_aliases import PROFILE_ALIASES, is_alias
+from services.ui import main_menu_keyboard
 
 router = Router()
 
 
+@router.message(lambda message: is_alias(message.text, PROFILE_ALIASES))
 @router.message(Command("profile"))
 async def cmd_profile(message: types.Message):
     user = await db.get_user(message.from_user.id)
@@ -40,4 +43,4 @@ async def cmd_profile(message: types.Message):
         f"📈 <b>Опыт жизни:</b>\n<code>{bar}</code> {progress}% — <b>{progress_text}</b>\n"
         f"Расти: <code>/grow</code>"
     )
-    await message.answer(text, parse_mode="HTML")
+    await message.answer(text, parse_mode="HTML", reply_markup=main_menu_keyboard())

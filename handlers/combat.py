@@ -13,12 +13,14 @@ from data.texts import (
     BITE_STALE_TARGET_TEXTS,
     BITE_WIN_TEXTS,
 )
+from services.crafting import get_equipment_bonus
 from services.game_utils import (
     format_cooldown,
     get_life_stage,
     get_telegram_cat_name,
     touch_current_user,
 )
+from services.text_aliases import BITE_ALIASES, TOP_ALIASES, is_alias
 
 router = Router()
 
@@ -72,6 +74,7 @@ def get_bite_chance(attacker, target) -> int:
     return max(20, min(85, chance))
 
 
+@router.message(lambda message: is_alias(message.text, BITE_ALIASES))
 @router.message(Command("bite"))
 async def cmd_bite(message: types.Message):
     attacker_id = message.from_user.id
@@ -118,10 +121,12 @@ async def cmd_bite(message: types.Message):
 
     if success:
         power = get_bite_power(attacker)
+        target_equipped = await db.get_equipped_items(target_id)
+        target_guard = get_equipment_bonus(target_equipped, "damage_guard")
         target_mice = target["mice_count"] or 0
         target_balance = target["balance"] or 0
-        mice_lost = min(target_mice, power)
-        fish_lost = 0 if mice_lost else min(target_balance, random.randint(5, 12 + get_life_stage(attacker) * 2))
+        mice_lost = max(0, min(target_mice, power) - target_guard)
+        fish_lost = 0 if mice_lost else max(0, min(target_balance, random.randint(5, 12 + get_life_stage(attacker) * 2)) - target_guard * 2)
         stolen_fish = 0
         if (attacker["cat_class"] or "none") == "thief" and fish_lost:
             stolen_fish = max(1, fish_lost // 2)
@@ -159,7 +164,9 @@ async def cmd_bite(message: types.Message):
             parse_mode="HTML"
         )
 
-    backlash = get_bite_power(target)
+    attacker_equipped = await db.get_equipped_items(attacker_id)
+    attacker_guard = get_equipment_bonus(attacker_equipped, "damage_guard")
+    backlash = max(1, get_bite_power(target) - attacker_guard)
     attacker_mice = attacker["mice_count"] or 0
     attacker_balance = attacker["balance"] or 0
     mice_lost = min(attacker_mice, max(1, backlash // 2))
@@ -197,6 +204,7 @@ async def cmd_bite(message: types.Message):
     )
 
 
+@router.message(lambda message: is_alias(message.text, TOP_ALIASES))
 @router.message(Command("top"))
 async def cmd_top(message: types.Message):
     user = await db.get_user(message.from_user.id)

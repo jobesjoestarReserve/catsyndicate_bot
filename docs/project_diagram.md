@@ -12,6 +12,7 @@ flowchart TD
     MW --> HC["handlers/common.py<br/>/start /meow /hunt /stats /reset_me"]
     MW --> HP["handlers/profile.py<br/>/profile"]
     MW --> HI["handlers/inventory.py<br/>/inv"]
+    MW --> HCRAFT["handlers/crafting.py<br/>/craft /equip /gear /use"]
     MW --> HM["handlers/mice.py<br/>/work /send_mice mine"]
     MW --> HCOMBAT["handlers/combat.py<br/>/bite /top"]
     MW --> HE["handlers/events.py<br/>/bite_boss /grab /event<br/>/spawn_event /events /end_event /events_auto"]
@@ -24,9 +25,22 @@ flowchart TD
     HCOMBAT --> GU
     HE --> GU
     HPROG --> GU
+    HCRAFT --> GU
+    HC --> UI["services/ui.py<br/>reply keyboard / inline keyboards"]
+    HI --> UI
+    HCRAFT --> UI
+    HC --> ALIAS["services/text_aliases.py<br/>human text aliases"]
+    HP --> ALIAS
+    HI --> ALIAS
+    HCRAFT --> ALIAS
+    HM --> ALIAS
+    HCOMBAT --> ALIAS
+    HE --> ALIAS
+    HPROG --> ALIAS
 
     HPROG --> SP["services/progression.py<br/>XP thresholds / cost / grow chance"]
     HE --> SE["services/events.py<br/>event config / autospawn / boss rewards"]
+    HCRAFT --> SC["services/crafting.py<br/>recipes / gear slots / consumables"]
 
     HC --> TXT["data/texts.py<br/>reply pools"]
     HM --> TXT
@@ -52,6 +66,7 @@ flowchart TD
     HC --> DB["database/db_manager.py"]
     HP --> DB
     HI --> DB
+    HCRAFT --> DB
     HM --> DB
     HCOMBAT --> DB
     HE --> DB
@@ -61,7 +76,7 @@ flowchart TD
     SE --> DB
 
     DB --> USERS["users<br/>profile / life_stage / life_xp / balance / mice / authority / last_seen"]
-    DB --> INV["inventory<br/>resources / future items"]
+    DB --> INV["inventory<br/>resources / consumables / equipment / buffs"]
     DB --> CD["cooldowns<br/>per-user command cooldowns"]
     DB --> CHAT["chat_activity<br/>chat activity + autospawn gate"]
     DB --> EVENTS["chat_events<br/>boss / fish_drop / resource_drop"]
@@ -77,6 +92,13 @@ flowchart LR
     MICE --> MINE["/send_mice mine"]
     WORK --> FISH["balance / рыбов"]
     MINE --> RES["шерсть / металл / мусор"]
+    RES --> CRAFT["/craft"]
+    CRAFT --> GEAR["/equip /gear"]
+    CRAFT --> BUFFS["/use расходники"]
+    GEAR --> POWER
+    BUFFS --> GROW
+    BUFFS --> HUNT
+    BUFFS --> WORK
     FISH --> GROW["/grow"]
     GROW --> XP["life_xp"]
     XP --> LIFE["life_stage"]
@@ -123,12 +145,16 @@ flowchart TD
 | Статусы жизней и классы | `data/constants.py` |
 | Runtime-флаги | `data/runtime_state.py` |
 | Утилиты игрока | `services/game_utils.py` |
+| Клавиатуры Telegram | `services/ui.py` |
+| Текстовые алиасы | `services/text_aliases.py` |
+| Рецепты и бонусы кузницы | `services/crafting.py` |
 | Логика роста | `services/progression.py` |
 | Логика событий | `services/events.py` |
 | Учёт активности чата | `services/activity.py` |
 | Базовые команды | `handlers/common.py` |
 | Профиль | `handlers/profile.py` |
 | Инвентарь | `handlers/inventory.py` |
+| Кузница и экипировка | `handlers/crafting.py` |
 | Работа и шахта | `handlers/mice.py` |
 | PvP | `handlers/combat.py` |
 | События | `handlers/events.py` |

@@ -1,7 +1,7 @@
 ﻿import random
 from html import escape
 from datetime import datetime, timedelta
-from aiogram import Router, types
+from aiogram import F, Router, types
 from aiogram.filters import Command
 from database.db_manager import db  # Импортируем готовый экземпляр
 from data.runtime_state import runtime_state
@@ -25,7 +25,10 @@ from services.game_utils import (
     sync_cat_name_if_needed,
     touch_current_user,
 )
+from services.crafting import get_equipment_bonus
 from services.progression import get_grow_cost, get_life_xp_required, get_progress_percent
+from services.text_aliases import HUNT_ALIASES, MEOW_ALIASES, STATS_ALIASES, is_alias
+from services.ui import main_menu_keyboard
 
 router = Router()
 
@@ -209,14 +212,17 @@ async def cmd_start(message: types.Message):
                 f"Твой статус: {CAT_STATUSES[1]}\n"
                 "Воруй рыбов через /meow и расти в иерархии."
             ),
-            parse_mode="HTML"
+            parse_mode="HTML",
+            reply_markup=main_menu_keyboard(),
         )
     else:
         await touch_current_user(message, user)
         cat_name = await sync_cat_name_if_needed(message, user)
         status = CAT_STATUSES.get(user['life_stage'], "Ветеран")
-        await message.answer(f"Мияу, {status} {escape(cat_name)}!")
+        await message.answer(f"Мияу, {status} {escape(cat_name)}!", reply_markup=main_menu_keyboard())
 
+@router.message(F.text == "🐟 Мяу")
+@router.message(lambda message: is_alias(message.text, MEOW_ALIASES))
 @router.message(Command("meow"))
 async def cmd_meow(message: types.Message):
     user_id = message.from_user.id
@@ -236,9 +242,14 @@ async def cmd_meow(message: types.Message):
             parse_mode="HTML"
         )
 
-    chance = get_meow_chance(user)
+    equipped = await db.get_equipped_items(user_id)
+    loot_bonus = get_equipment_bonus(equipped, "loot_bonus")
+    meow_buff = await db.consume_buff(user_id, "meow_luck")
+    chance = min(95, get_meow_chance(user) + (12 if meow_buff is not None else 0))
     cooldown_seconds = get_meow_cooldown(user)
-    fish_caught = roll_meow_reward(user)
+    fish_caught = roll_meow_reward(user) + loot_bonus
+    if meow_buff is not None:
+        fish_caught = int(fish_caught * 1.25)
     success = random.randint(1, 100) <= chance
     if runtime_state.cooldowns_enabled:
         await db.set_cooldown(user_id, MEOW_COMMAND, now + timedelta(seconds=cooldown_seconds))
@@ -265,6 +276,7 @@ async def cmd_meow(message: types.Message):
                 f"{result_text}\n\n"
                 f"{result_title} Ты стащил <b>{fish_caught}</b> 🐟.\n"
                 f"Шанс операции: <b>{chance}%</b>"
+                + ("\n🧪 Сработала кошачья мята." if meow_buff is not None else "")
             )
         )
     else:
@@ -299,6 +311,8 @@ async def cmd_meow(message: types.Message):
             )
         )
 
+@router.message(F.text == "🐭 Охота")
+@router.message(lambda message: is_alias(message.text, HUNT_ALIASES))
 @router.message(Command("hunt"))
 async def cmd_hunt(message: types.Message):
     user_id = message.from_user.id
@@ -315,7 +329,10 @@ async def cmd_hunt(message: types.Message):
         cooldown_message = random.choice(HUNT_COOLDOWN_VARIANTS).format(cooldown=cooldown_text)
         return await message.answer(cooldown_message, parse_mode="HTML")
 
-    chance = get_hunt_chance(user)
+    equipped = await db.get_equipped_items(user_id)
+    hunt_bonus = get_equipment_bonus(equipped, "hunt_chance")
+    hunt_buff = await db.consume_buff(user_id, "hunt_safety")
+    chance = min(95, get_hunt_chance(user) + hunt_bonus + (10 if hunt_buff is not None else 0))
     reward = roll_hunt_reward(user)
     success = random.randint(1, 100) <= chance
     if runtime_state.cooldowns_enabled:
@@ -337,6 +354,7 @@ async def cmd_hunt(message: types.Message):
             f"{intro}\n\n"
             f"✅ Добыча: <b>{reward}</b> 🐭\n"
             f"Шанс охоты: <b>{chance}%</b>"
+            + ("\n🧪 Лапомазь помогла держать темп." if hunt_buff is not None else "")
         )
 
         if is_critical:
@@ -348,7 +366,11 @@ async def cmd_hunt(message: types.Message):
         )
 
     mice_count = user["mice_count"] or 0
-    lost_mouse = mice_count > 0 and random.randint(1, 100) <= get_hunt_fumble_chance(user)
+    lost_mouse = (
+        hunt_buff is None
+        and mice_count > 0
+        and random.randint(1, 100) <= get_hunt_fumble_chance(user)
+    )
     if lost_mouse:
         await db.update_mice_count(user_id, -1)
         variant = random.choice(HUNT_FUMBLE_VARIANTS)
@@ -364,6 +386,7 @@ async def cmd_hunt(message: types.Message):
         f"{intro}\n\n"
         f"❌ Охота провалена.{extra}\n"
         f"Шанс охоты был: <b>{chance}%</b>"
+        + ("\n🧪 Лапомазь спасла мышь от потери." if hunt_buff is not None else "")
     )
 
     if lost_mouse:
@@ -375,6 +398,8 @@ async def cmd_hunt(message: types.Message):
     )
 
 
+@router.message(F.text == "📊 Досье")
+@router.message(lambda message: is_alias(message.text, STATS_ALIASES))
 @router.message(Command("stats"))
 async def cmd_stats(message: types.Message):
     user = await db.get_user(message.from_user.id)
@@ -403,7 +428,7 @@ async def cmd_stats(message: types.Message):
         f"Используй /grow чтобы стать круче."
     )
     # Здесь можно прикрепить ту самую крутую картинку Синдиката
-    await message.answer(text, parse_mode="HTML")
+    await message.answer(text, parse_mode="HTML", reply_markup=main_menu_keyboard())
 
 @router.message(Command("reset_me"))
 async def cmd_reset(message: types.Message):

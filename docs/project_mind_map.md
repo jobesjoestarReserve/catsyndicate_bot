@@ -75,8 +75,8 @@ mindmap
       Мыши
         "ресурс и рабочая сила"
         /hunt
-        /work
-        /send_mice_mine["/send_mice mine"]
+        /work["/work, работа N: мыши уходят на смену"]
+        /send_mice_mine["/send_mice mine, шахта N: мыши уходят в добычу"]
         "щит в будущих подземельях"
       Материалы
         wool["шерсть"]
@@ -84,14 +84,34 @@ mindmap
         trash["мусор"]
         /send_mice_mine
         /grab_resources["/grab во время ресурсного контейнера"]
-        "будущая кузница"
+        /craft
+      Кузница
+        /craft
+        /equip
+        /gear
+        /use
+        "валерьянка"
+        "кошачья мята"
+        "мышиный энергетик"
+        "лапомазь"
+        "шлем"
+        "нагрудник"
+        "нарукавники"
+        "ботинки"
     Core_Loop
       "1 /hunt ловит мышей"
-      "2 /work отправляет мышей за рыбами"
-      "3 /send_mice mine добывает материалы"
+      "2 /work отправляет мышей за рыбами на отложенную смену"
+      "3 /send_mice mine добывает материалы после отложенной добычи"
       "4 /grow повышает жизнь"
       "5 /bite даёт PvP и авторитет"
       "6 события дают общий хаос и бонусы"
+    UX
+      "основная клавиатура после /start"
+      "кнопки: Мяу, Охота, Инвентарь, Кузница, Экипировка, Досье"
+      "обычные фразы: мой котёнок, досье, инвентарь, кузница, работа 5, шахта 5"
+      "в группах фразы требуют BotFather /setprivacy Disable"
+      "inline-кнопки категорий кузницы"
+      "inline-кнопки собрать/надеть/использовать"
     PvE_PvP
       PvP
         /bite
@@ -163,11 +183,13 @@ mindmap
         profile["handlers/profile.py: /profile"]
         inventory["handlers/inventory.py: /inv"]
         mice["handlers/mice.py: /work /send_mice"]
+        crafting["handlers/crafting.py: /craft /equip /gear /use"]
         combat["handlers/combat.py: /bite /top"]
         events["handlers/events.py: /bite_boss /grab /spawn_event /events /event /end_event /events_auto"]
         admin["handlers/admin.py: /admin /cooldowns_on /cooldowns_off /add_fish /reset_fish"]
       services
         game_utils["services/game_utils.py: имена, last_seen, cooldown text"]
+        crafting_service["services/crafting.py: рецепты, экипировка, расходники, бонусы"]
         progression_service["services/progression.py: XP, цена, шанс, рост"]
         events_service["services/events.py: конфиг событий, автоспаун, награды"]
         activity["services/activity.py: активность чата"]
@@ -183,10 +205,14 @@ mindmap
 | `/inv` | игрок | показывает рыбов, мышей и материалы | `handlers/inventory.py` |
 | `/meow` | игрок | добывает рыбов напрямую | `handlers/common.py` |
 | `/hunt` | игрок | ловит мышей | `handlers/common.py` |
-| `/work` | игрок | отправляет мышей на классовую работу за рыбами | `handlers/mice.py` |
-| `/send_mice mine` | игрок | отправляет мышей за материалами | `handlers/mice.py` |
+| `/work` | игрок | отправляет мышей на классовую работу за рыбами; результат приходит позже | `handlers/mice.py` |
+| `/send_mice mine` | игрок | отправляет мышей за материалами; результат приходит позже | `handlers/mice.py` |
 | `/grow` | игрок | тратит рыбов и качает `life_xp` | `handlers/progression.py` |
 | `/upgrade` | игрок | алиас `/grow` | `handlers/progression.py` |
+| `/craft` | игрок | показывает рецепты или создаёт расходник/экипировку | `handlers/crafting.py` |
+| `/equip` | игрок | надевает экипировку в слот | `handlers/crafting.py` |
+| `/gear` | игрок | показывает надетую экипировку | `handlers/crafting.py` |
+| `/use` | игрок | использует расходник и даёт бафф на следующую команду | `handlers/crafting.py` |
 | `/bite` | игрок | PvP-укус reply на игрока | `handlers/combat.py` |
 | `/top` | игрок | топ авторитета | `handlers/combat.py` |
 | `/bite_boss` | игрок | атакует активного Мега-пса | `handlers/events.py` |
@@ -215,11 +241,15 @@ mindmap
 | `data/texts.py` | все большие пулы реплик |
 | `data/runtime_state.py` | runtime-флаги: кулдауны, автоспаун |
 | `services/game_utils.py` | общие утилиты игрока, имени, активности, cooldown-текста |
+| `services/ui.py` | основные reply-кнопки и inline-кнопки экранов |
+| `services/text_aliases.py` | обычные текстовые фразы, которые открывают игровые действия |
+| `services/crafting.py` | рецепты кузницы, слоты экипировки, расходники и бонусы |
 | `services/progression.py` | математика `/grow`: XP, цена, шансы, переход жизни |
 | `services/events.py` | математика событий, автоспаун, формат событий |
 | `services/activity.py` | middleware активности чата |
 | `handlers/common.py` | базовые команды, `/meow`, `/hunt`, `/stats` |
 | `handlers/progression.py` | `/grow` и `/upgrade` |
+| `handlers/crafting.py` | `/craft`, `/equip`, `/gear`, `/use` |
 | `handlers/mice.py` | `/work`, `/send_mice mine` |
 | `handlers/combat.py` | `/bite`, `/top` |
 | `handlers/events.py` | события и админ-управление событиями |
@@ -232,18 +262,19 @@ mindmap
 Главная петля сейчас такая:
 
 1. Игрок ловит мышей через `/hunt`.
-2. Мыши идут на `/work`, чтобы приносить рыбов.
-3. Мыши идут на `/send_mice mine`, чтобы приносить материалы.
-4. Рыбы тратятся на `/grow`.
-5. `/grow` повышает `life_xp`, а потом `life_stage`.
-6. `/bite` даёт PvP, авторитет и социальный хаос.
-7. События дают общие цели: босс, рыбный контейнер, ресурсный контейнер.
+2. Мыши уходят на `/work`, сразу списываются из дома и позже приносят рыбов.
+3. Мыши уходят на `/send_mice mine`, сразу списываются из дома и позже приносят материалы.
+4. Материалы тратятся в `/craft` на расходники и экипировку.
+5. Рыбы тратятся на `/grow`.
+6. `/grow` повышает `life_xp`, а потом `life_stage`.
+7. `/bite` даёт PvP, авторитет и социальный хаос.
+8. События дают общие цели: босс, рыбный контейнер, ресурсный контейнер.
 
 ## Следующие Большие Пустые Места
 
 | Фича | Зачем нужна |
 |---|---|
-| Кузница / крафт | чтобы шерсть, металл и мусор стали полноценным прогрессом |
+| Оружие по классам | индивидуальные эффекты оружия для воина, вора, саппорта и ассасина |
 | Подземелья | PvE-применение мышей, HP, шмота и классов |
 | Банды / кланы | социальная мета после появления стабильного прогресса |
 | Вознесение | endgame для 9-й жизни и редкая валюта `Золотые усы` |
@@ -267,8 +298,11 @@ mindmap
 |---|---|---|
 | `/meow` | рыбов | cooldown |
 | `/hunt` | мышей | cooldown |
-| `/work [N]` | рыбов через мышиную работу | мышей, cooldown |
-| `/send_mice mine [N]` | шерсть, металл, мусор | мышей, cooldown |
+| `/work [N]` / `работа N` | рыбов через мышиную работу после задержки | мышей сразу, cooldown |
+| `/send_mice mine [N]` / `шахта N` | шерсть, металл, мусор после задержки | мышей сразу, cooldown |
+| `/craft [recipe_id]` | расходники и экипировка | материалы |
+| `/use [название]` | бафф на следующую команду | расходник |
+| `/equip [название]` | бонус экипировки | предмет экипировки |
 | `/grow` | XP жизни и шанс новой жизни | рыбов, cooldown |
 | `/upgrade` | то же, что `/grow` | рыбов, cooldown |
 
@@ -325,10 +359,15 @@ mindmap
 | `update_mice_count` | добавить/снять мышей |
 | `add_resources` | добавить материалы |
 | `get_resources` | прочитать материалы |
+| `craft_inventory_item` | списать материалы и создать предмет |
+| `equip_item` | надеть предмет в слот экипировки |
+| `consume_inventory_item` | потратить расходник |
+| `consume_buff` | потратить активный одноразовый бафф |
 | `get_cooldown` / `set_cooldown` | cooldown-ы команд |
 | `apply_grow_result` | применить результат `/grow` |
-| `complete_mouse_work` | применить `/work` |
-| `complete_mice_mining` | применить `/send_mice mine` |
+| `start_mouse_job` | списать мышей и поставить отложенную работу/шахту одной транзакцией |
+| `complete_mouse_work_job` | завершить отложенную `/work` |
+| `complete_mice_mining_job` | завершить отложенную `/send_mice mine` |
 | `apply_bite_result` | применить PvP `/bite` |
 | `create_chat_event` | создать событие |
 | `add_boss_damage` | нанести урон боссу |
@@ -362,6 +401,8 @@ mindmap
 | Автоспаун событий | `EVENT_CHECK_SECONDS`, `EVENT_AUTOSPAWN_CHANCE`, `EVENT_CHAT_COOLDOWN_SECONDS` в `services/events.py` |
 | HP/награды событий | `EVENT_CONFIGS` в `services/events.py` |
 | Cooldown `/grab` и `/bite_boss` | `GRAB_COOLDOWN_SECONDS`, `BITE_BOSS_COOLDOWN_SECONDS` в `handlers/events.py` |
+| Рецепты кузницы | `RECIPES` в `services/crafting.py` |
+| Бонусы экипировки | `EQUIPMENT_BLUEPRINTS` в `services/crafting.py` |
 
 ## Тексты И Реплики
 
@@ -373,6 +414,7 @@ mindmap
 | Реплики `/bite` | `BITE_*_TEXTS` в `data/texts.py` |
 | Реплики `/grow` | `GROW_TEXTS` в `data/texts.py` |
 | Реплики событий | `EVENT_*_TEXTS` в `data/texts.py` |
+| Названия расходников/экипировки | `RECIPES` и `EQUIPMENT_BLUEPRINTS` в `services/crafting.py` |
 | Названия жизней | `CAT_STATUSES` в `data/constants.py` |
 | Названия классов | `CAT_CLASSES` в `data/constants.py` |
 
@@ -394,14 +436,25 @@ mindmap
 1. `/hunt`
 2. `/work`
 3. `/send_mice mine`
-4. `/inv`
+4. `/craft`
+5. `/inv`
 
 ### Рост
 
 1. `/add_fish 1000` если ты админ
-2. `/grow`
-3. `/profile`
-4. `/stats`
+2. `/craft valerian`
+3. `/use Валерьянка`
+4. `/grow`
+5. `/profile`
+6. `/stats`
+
+### Кузница
+
+1. `/send_mice mine 5`
+2. Открыть `🛠 Кузница`.
+3. Выбрать раздел и нажать кнопку сборки рецепта.
+4. В `🎒 Инвентарь` нажать кнопку расходника или экипировки.
+5. Проверить `🧥 Экипировка`.
 
 ### PvP
 
@@ -438,7 +491,7 @@ mindmap
 
 | Ограничение | Почему важно |
 |---|---|
-| Нет крафта | материалы уже добываются, но пока почти не тратятся |
+| Нет классового оружия | броня и расходники уже есть, но оружие по классам ещё не реализовано |
 | Нет подземелий | мыши пока не работают как полноценный боевой щит в PvE |
 | Нет HP игрока | PvP пока снимает мышей/рыбов/авторитет, но не здоровье |
 | Нет банд | социальная мета ещё не реализована |
@@ -451,11 +504,11 @@ mindmap
 
 | Новая фича | Куда смотреть сначала |
 |---|---|
-| Кузница | `inventory`, `add_resources`, новый `handlers/crafting.py` |
+| Расширение кузницы | `services/crafting.py`, `inventory`, новые рецепты и бонусы |
 | Подземелья | `mice_count`, классы, новый `handlers/dungeons.py` |
 | Магазин | `balance`, `inventory`, новый `handlers/shop.py` |
-| Расходники | `inventory.item_type = consumable`, новые команды `/use` |
-| Экипировка | `inventory.is_equipped`, бонусы в `/bite`, `/bite_boss`, будущих подземельях |
+| Оружие | `inventory.item_type = equipment`, новые рецепты и классовые бонусы в `services/crafting.py` |
+| Улучшение экипировки | `inventory.is_equipped`, бонусы в `/bite`, `/bite_boss`, будущих подземельях |
 | Банды | новые таблицы `clans`, `clan_members`, новый `handlers/clans.py` |
 | Вознесение | `life_stage = 9`, новая валюта, постоянные бонусы |
 | Глобальные рейтинги | `get_top_*` методы в `database/db_manager.py` |

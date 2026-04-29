@@ -7,7 +7,10 @@ from aiogram.filters import Command
 from database.db_manager import db
 from data.runtime_state import runtime_state
 from data.texts import WORK_CLASS_LABELS, WORK_CLASS_PROFILES
+from services.crafting import get_equipment_bonus
 from services.game_utils import format_cooldown, get_life_stage, touch_current_user
+from services.mouse_jobs import format_job_duration
+from services.text_aliases import MINE_ALIASES, WORK_ALIASES, is_alias_with_count
 
 router = Router()
 
@@ -71,6 +74,8 @@ def parse_positive_count(message: types.Message, default=1, max_value=25):
 
 def parse_send_mice_args(message: types.Message):
     parts = (message.text or "").split()
+    if is_alias_with_count(message.text, MINE_ALIASES):
+        return "mine", parse_positive_count(message, default=1, max_value=25)
     if len(parts) < 2:
         return None, 1
 
@@ -232,6 +237,7 @@ def roll_mine_result(user, mice_sent: int):
     return {name: amount for name, amount in resources.items() if amount > 0}, mice_sent - lost, lost
 
 
+@router.message(lambda message: is_alias_with_count(message.text, WORK_ALIASES))
 @router.message(Command("work"))
 async def cmd_work(message: types.Message):
     user_id = message.from_user.id
@@ -261,23 +267,21 @@ async def cmd_work(message: types.Message):
             parse_mode="HTML"
         )
 
+    equipped = await db.get_equipped_items(user_id)
+    loot_bonus = get_equipment_bonus(equipped, "loot_bonus")
+    work_buff = await db.consume_buff(user_id, "work_boost")
     work_result = roll_work_result(user, mice_sent)
+    if loot_bonus:
+        work_result["reward"] += mice_sent * loot_bonus
+    if work_buff is not None:
+        work_result["reward"] = int(work_result["reward"] * 1.2)
     reward = work_result["reward"]
-    mice_returned = work_result["mice_returned"]
     mice_lost = work_result["mice_lost"]
-    result = await db.complete_mouse_work(user_id, mice_sent, reward, mice_returned)
-    if not result:
-        return await message.answer("🐭 Мыши разбежались быстрее бухгалтерии. Попробуй еще раз.")
 
     resources = work_result["resources"]
     authority = work_result["authority"]
-    if resources:
-        await db.add_resources(user_id, resources)
-    if authority:
-        await db.update_authority(user_id, authority)
-
-    if runtime_state.cooldowns_enabled:
-        await db.set_cooldown(user_id, WORK_COMMAND, now + timedelta(seconds=get_work_cooldown(user)))
+    duration = get_work_cooldown(user)
+    complete_at = now + timedelta(seconds=duration)
 
     profile = work_result["profile"]
     outcome = work_result["outcome"]
@@ -290,35 +294,43 @@ async def cmd_work(message: types.Message):
         "failure": "⚠️ <b>Смена с приключениями.</b>",
         "critical_failure": "💥 <b>Критический провал смены!</b>",
     }
-    lost_text = (
-        f"\nПотери бригады: <b>{mice_lost}</b> 🐭"
-        if mice_lost
-        else "\nБригада вернулась полностью, хотя часть мышей делает вид, что ничего не было."
+    start_result = await db.start_mouse_job(
+        user_id,
+        message.chat.id,
+        "work",
+        {
+            "mice_sent": mice_sent,
+            "mice_returned": work_result["mice_returned"],
+            "mice_lost": mice_lost,
+            "reward": reward,
+            "resources": resources,
+            "authority": authority,
+            "profile_label": profile_label,
+            "result_text": result_text,
+            "title": title_by_outcome[outcome],
+            "buff_used": work_buff is not None,
+        },
+        complete_at,
+        mice_sent,
     )
-    resources_text = ""
-    if resources:
-        resources_text = "\nБонус-ресурсы: " + ", ".join(
-            f"{RESOURCE_NAMES[name]} <b>+{amount}</b>"
-            for name, amount in resources.items()
-        )
-    authority_text = f"\nАвторитет: <b>+{authority}</b>" if authority else ""
+    if not start_result:
+        return await message.answer("🐭 Мыши пересчитались и отказались выходить на смену. Попробуй ещё раз.")
+
+    if runtime_state.cooldowns_enabled:
+        await db.set_cooldown(user_id, WORK_COMMAND, complete_at)
+
     await message.answer(
         (
-            f"{title_by_outcome[outcome]}\n"
-            f"{result_text}\n\n"
-            f"Работа: <b>{profile_label}</b>\n"
-            f"Отправлено: <b>{mice_sent}</b> 🐭\n"
-            f"Добыто: <b>{reward}</b> 🐟"
-            f"{lost_text}"
-            f"{resources_text}"
-            f"{authority_text}\n"
-            f"Мышей осталось: <b>{result['mice_count']}</b>\n"
-            f"Баланс: <b>{result['balance']}</b> 🐟"
+            f"🐭 Бригада ушла на работу: <b>{mice_sent}</b> мышей.\n"
+            f"Вернутся примерно через <b>{format_job_duration(duration)}</b>.\n"
+            f"Мышей дома: <b>{start_result['mice_left']}</b>\n\n"
+            "Пока они на смене, они не защищают синдикат."
         ),
         parse_mode="HTML"
     )
 
 
+@router.message(lambda message: is_alias_with_count(message.text, MINE_ALIASES))
 @router.message(Command("send_mice"))
 async def cmd_send_mice(message: types.Message):
     user_id = message.from_user.id
@@ -351,29 +363,41 @@ async def cmd_send_mice(message: types.Message):
             parse_mode="HTML"
         )
 
+    equipped = await db.get_equipped_items(user_id)
+    loot_bonus = get_equipment_bonus(equipped, "loot_bonus")
     resources, mice_returned, mice_lost = roll_mine_result(user, mice_sent)
-    result = await db.complete_mice_mining(user_id, mice_sent, mice_returned, resources)
-    if not result:
-        return await message.answer("🐭 Мыши отказались подписывать технику безопасности. Попробуй еще раз.")
+    if loot_bonus:
+        for name in resources:
+            resources[name] += loot_bonus
+
+    duration = get_mine_cooldown(user)
+    complete_at = now + timedelta(seconds=duration)
+
+    start_result = await db.start_mouse_job(
+        user_id,
+        message.chat.id,
+        "mine",
+        {
+            "mice_sent": mice_sent,
+            "mice_returned": mice_returned,
+            "mice_lost": mice_lost,
+            "resources": resources,
+        },
+        complete_at,
+        mice_sent,
+    )
+    if not start_result:
+        return await message.answer("🐭 Мыши передумали спускаться в шахту. Попробуй ещё раз.")
 
     if runtime_state.cooldowns_enabled:
-        await db.set_cooldown(user_id, SEND_MICE_COMMAND, now + timedelta(seconds=get_mine_cooldown(user)))
+        await db.set_cooldown(user_id, SEND_MICE_COMMAND, complete_at)
 
-    resources_text = "\n".join(
-        f"{RESOURCE_NAMES[name].capitalize()}: <b>+{amount}</b>"
-        for name, amount in resources.items()
-    )
-    lost_text = (
-        f"\nНе вернулись из шахты: <b>{mice_lost}</b> 🐭"
-        if mice_lost
-        else "\nВсе добытчики вернулись, кроме чувства собственного достоинства."
-    )
     await message.answer(
         (
-            f"⛏️ Мыши спустились в подвал и принесли крафтовую добычу.\n\n"
-            f"{resources_text}\n"
-            f"{lost_text}\n"
-            f"Мышей осталось: <b>{result['mice_count']}</b>"
+            f"⛏️ В шахту ушли <b>{mice_sent}</b> мышей.\n"
+            f"Вернутся примерно через <b>{format_job_duration(duration)}</b>.\n"
+            f"Мышей дома: <b>{start_result['mice_left']}</b>\n\n"
+            "Пока добытчики в подвале, они не участвуют в защите."
         ),
         parse_mode="HTML"
     )
