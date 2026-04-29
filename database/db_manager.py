@@ -19,6 +19,52 @@ class DBManager:
     async def ensure_schema(self):
         async with self.pool.acquire() as conn:
             await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id bigint PRIMARY KEY,
+                    cat_name text NOT NULL,
+                    cat_class text NOT NULL DEFAULT 'none',
+                    life_stage integer NOT NULL DEFAULT 1,
+                    life_xp integer NOT NULL DEFAULT 0,
+                    balance integer NOT NULL DEFAULT 100,
+                    mice_count integer NOT NULL DEFAULT 0,
+                    authority integer NOT NULL DEFAULT 0,
+                    last_seen timestamp without time zone
+                )
+                """
+            )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS inventory (
+                    id serial PRIMARY KEY,
+                    user_id bigint NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    item_name text NOT NULL,
+                    item_type text NOT NULL,
+                    bonus_value integer NOT NULL DEFAULT 0,
+                    is_equipped boolean NOT NULL DEFAULT false,
+                    created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS cooldowns (
+                    user_id bigint NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    command text NOT NULL,
+                    available_at timestamp without time zone NOT NULL,
+                    PRIMARY KEY (user_id, command)
+                )
+                """
+            )
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS cat_name text DEFAULT 'Безымянный кот'"
+            )
+            await conn.execute("UPDATE users SET cat_name = 'Безымянный кот' WHERE cat_name IS NULL")
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS life_stage integer DEFAULT 1"
+            )
+            await conn.execute("UPDATE users SET life_stage = 1 WHERE life_stage IS NULL")
+            await conn.execute(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen timestamp without time zone"
             )
             await conn.execute("ALTER TABLE users ALTER COLUMN last_seen DROP DEFAULT")
@@ -30,6 +76,47 @@ class DBManager:
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS life_xp integer DEFAULT 0"
             )
             await conn.execute("UPDATE users SET life_xp = 0 WHERE life_xp IS NULL")
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS cat_class text DEFAULT 'none'"
+            )
+            await conn.execute("UPDATE users SET cat_class = 'none' WHERE cat_class IS NULL")
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS mice_count integer DEFAULT 0"
+            )
+            await conn.execute("UPDATE users SET mice_count = 0 WHERE mice_count IS NULL")
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS balance integer DEFAULT 100"
+            )
+            await conn.execute("UPDATE users SET balance = 100 WHERE balance IS NULL")
+            await conn.execute(
+                "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS id serial"
+            )
+            await conn.execute(
+                "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS user_id bigint"
+            )
+            await conn.execute(
+                "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS item_name text"
+            )
+            await conn.execute(
+                "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS item_type text"
+            )
+            await conn.execute(
+                "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS bonus_value integer DEFAULT 0"
+            )
+            await conn.execute(
+                "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS is_equipped boolean DEFAULT false"
+            )
+            await conn.execute("UPDATE inventory SET bonus_value = 0 WHERE bonus_value IS NULL")
+            await conn.execute("UPDATE inventory SET is_equipped = false WHERE is_equipped IS NULL")
+            await conn.execute(
+                "ALTER TABLE cooldowns ADD COLUMN IF NOT EXISTS user_id bigint"
+            )
+            await conn.execute(
+                "ALTER TABLE cooldowns ADD COLUMN IF NOT EXISTS command text"
+            )
+            await conn.execute(
+                "ALTER TABLE cooldowns ADD COLUMN IF NOT EXISTS available_at timestamp without time zone"
+            )
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS chat_activity (
@@ -72,6 +159,12 @@ class DBManager:
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_chat_events_active ON chat_events(chat_id, status, ends_at)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_inventory_user_type ON inventory(user_id, item_type, item_name)"
+            )
+            await conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_cooldowns_user_command ON cooldowns(user_id, command)"
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_chat_activity_spawn ON chat_activity(auto_events_enabled, last_seen, next_event_after)"

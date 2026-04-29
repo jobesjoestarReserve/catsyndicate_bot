@@ -25,10 +25,16 @@ load_dotenv()
 async def main():
     logging.basicConfig(level=logging.INFO)
 
+    bot_token = os.getenv("BOT_TOKEN")
+    if not bot_token:
+        raise RuntimeError("BOT_TOKEN is not set. Add it to .env before starting the bot.")
+    if not os.getenv("DATABASE_URL"):
+        raise RuntimeError("DATABASE_URL is not set. Add it to .env before starting the bot.")
+
     # Подключаем базу
     await db.connect()
 
-    bot = Bot(token=os.getenv("BOT_TOKEN"))
+    bot = Bot(token=bot_token)
     dp = Dispatcher()
     dp.message.middleware(ChatActivityMiddleware())
 

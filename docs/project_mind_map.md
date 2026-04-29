@@ -2,7 +2,7 @@
 
 Эта карта нужна как быстрый навигатор по игре и коду. Если потерялся, начинай с раздела `Команды`, потом смотри `Игровой цикл` и `Файлы`.
 
-Архитектурная схема проекта лежит отдельно: [project_diagram.md](/C:/Users/jobesjoestar/Desktop/catsyndicate/docs/project_diagram.md)
+Архитектурная схема проекта лежит отдельно: [project_diagram.md](project_diagram.md)
 
 ## Mind Map
 
@@ -456,8 +456,8 @@ mindmap
 
 | Инструмент | Где настроен | Для чего |
 |---|---|---|
-| `code_searcher_mini` | `C:\Users\jobesjoestar\.codex\agents\code_searcher_mini.toml` | read-only sub-agent для быстрых вопросов по коду, call graph, символам, потокам и evidence-backed findings |
+| `code_searcher_mini` | `%USERPROFILE%\.codex\agents\code_searcher_mini.toml` | read-only sub-agent для быстрых вопросов по коду, call graph, символам, потокам и evidence-backed findings |
 
-Регистрация агента добавлена в `C:\Users\jobesjoestar\.codex\config.toml` блоком `[agents.code_searcher_mini]`.
+Регистрация агента добавляется в `%USERPROFILE%\.codex\config.toml` блоком `[agents.code_searcher_mini]`.
 
 Переносимая копия лежит в проекте: `codex_agents/code_searcher_mini.toml`. Инструкция для установки на другой компьютер: `codex_agents/README.md`.
