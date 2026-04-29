@@ -1,6 +1,7 @@
 import asyncpg
 import json
 import os
+from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -428,17 +429,24 @@ class DBManager:
                 )
                 return {"job": job, "mice_left": mice_left}
 
-    async def get_due_mouse_jobs(self, limit=20):
+    async def get_due_mouse_jobs(self, limit=20, current_time=None, chat_id=None, user_id=None):
+        current_time = current_time or datetime.now()
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 """
                 SELECT *
                 FROM mouse_jobs
-                WHERE status = 'active' AND complete_at <= CURRENT_TIMESTAMP
+                WHERE status = 'active'
+                  AND complete_at <= $2
+                  AND ($3::bigint IS NULL OR chat_id = $3)
+                  AND ($4::bigint IS NULL OR user_id = $4)
                 ORDER BY complete_at
                 LIMIT $1
                 """,
                 limit,
+                current_time,
+                chat_id,
+                user_id,
             )
 
     async def complete_mouse_work_job(self, job_id, user_id, fish_reward, mice_returned, resources, authority):

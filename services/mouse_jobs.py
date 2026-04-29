@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime
 
 from database.db_manager import db
 from services.game_utils import format_cooldown
@@ -40,7 +41,7 @@ async def complete_work_job(bot, job, payload):
         authority,
     )
     if not result:
-        return
+        return False
 
     lost = payload["mice_lost"]
     lost_text = (
@@ -74,6 +75,7 @@ async def complete_work_job(bot, job, payload):
         ),
         parse_mode="HTML",
     )
+    return True
 
 
 async def complete_mine_job(bot, job, payload):
@@ -85,7 +87,7 @@ async def complete_mine_job(bot, job, payload):
         resources,
     )
     if not result:
-        return
+        return False
 
     lost = payload["mice_lost"]
     lost_text = (
@@ -104,19 +106,26 @@ async def complete_mine_job(bot, job, payload):
         ),
         parse_mode="HTML",
     )
+    return True
 
 
-async def complete_due_mouse_jobs(bot):
-    jobs = await db.get_due_mouse_jobs()
+async def complete_due_mouse_jobs(bot, chat_id=None, user_id=None):
+    jobs = await db.get_due_mouse_jobs(
+        current_time=datetime.now(),
+        chat_id=chat_id,
+        user_id=user_id,
+    )
+    completed = 0
     for job in jobs:
         try:
             payload = decode_payload(job["payload"])
             if job["job_type"] == "work":
-                await complete_work_job(bot, job, payload)
+                completed += int(await complete_work_job(bot, job, payload))
             elif job["job_type"] == "mine":
-                await complete_mine_job(bot, job, payload)
+                completed += int(await complete_mine_job(bot, job, payload))
         except Exception:
             logging.exception("Failed to complete mouse job %s", job["id"])
+    return completed
 
 
 async def mouse_job_loop(bot):

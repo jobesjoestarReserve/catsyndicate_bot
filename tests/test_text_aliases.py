@@ -1,6 +1,14 @@
 import unittest
 
-from services.text_aliases import MINE_ALIASES, PROFILE_ALIASES, WORK_ALIASES, is_alias, is_alias_with_count, normalize_text
+from services.text_aliases import (
+    MINE_ALIASES,
+    MOUSE_RETURN_ALIASES,
+    PROFILE_ALIASES,
+    WORK_ALIASES,
+    is_alias,
+    is_alias_with_count,
+    normalize_text,
+)
 
 
 class TextAliasTests(unittest.TestCase):
@@ -16,6 +24,10 @@ class TextAliasTests(unittest.TestCase):
         self.assertTrue(is_alias_with_count("Работа 5", WORK_ALIASES))
         self.assertTrue(is_alias_with_count("Шахта 4", MINE_ALIASES))
         self.assertFalse(is_alias_with_count("Работа пять", WORK_ALIASES))
+
+    def test_mouse_return_aliases_accept_manual_check_phrases(self):
+        self.assertTrue(is_alias("Завершить работу", MOUSE_RETURN_ALIASES))
+        self.assertTrue(is_alias("вернуть мышей", MOUSE_RETURN_ALIASES))
 
 
 if __name__ == "__main__":

@@ -9,8 +9,8 @@ from data.runtime_state import runtime_state
 from data.texts import WORK_CLASS_LABELS, WORK_CLASS_PROFILES
 from services.crafting import get_equipment_bonus
 from services.game_utils import format_cooldown, get_life_stage, touch_current_user
-from services.mouse_jobs import format_job_duration
-from services.text_aliases import MINE_ALIASES, WORK_ALIASES, is_alias_with_count
+from services.mouse_jobs import complete_due_mouse_jobs, format_job_duration
+from services.text_aliases import MINE_ALIASES, MOUSE_RETURN_ALIASES, WORK_ALIASES, is_alias, is_alias_with_count
 
 router = Router()
 
@@ -235,6 +235,27 @@ def roll_mine_result(user, mice_sent: int):
         loss_chance = max(2, loss_chance - 4)
     lost = sum(1 for _ in range(mice_sent) if random.randint(1, 100) <= loss_chance)
     return {name: amount for name, amount in resources.items() if amount > 0}, mice_sent - lost, lost
+
+
+@router.message(lambda message: is_alias(message.text, MOUSE_RETURN_ALIASES))
+@router.message(Command("return_mice", "finish_jobs"))
+async def cmd_return_mice(message: types.Message):
+    user_id = message.from_user.id
+    completed = await complete_due_mouse_jobs(
+        message.bot,
+        chat_id=message.chat.id,
+        user_id=user_id,
+    )
+    if completed:
+        return await message.answer(
+            f"🐭 Проверил смены: завершено <b>{completed}</b>. Мыши уже несут отчёт выше.",
+            parse_mode="HTML",
+        )
+
+    await message.answer(
+        "🐭 Готовых смен пока нет. Если таймер уже точно прошёл, попробуй ещё раз через несколько секунд.",
+        parse_mode="HTML",
+    )
 
 
 @router.message(lambda message: is_alias_with_count(message.text, WORK_ALIASES))
