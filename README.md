@@ -46,3 +46,17 @@ DATABASE_URL=postgresql://postgres:cats_secret_password@localhost:5432/catsyndic
 - [Mind map проекта](docs/project_mind_map.md)
 
 База данных инициализируется при старте через `database/db_manager.py::ensure_schema`: код создаёт базовые таблицы и добавляет недостающие колонки для текущей версии проекта.
+
+## Проверки
+
+Синтаксис проекта:
+
+```powershell
+.\venv\Scripts\python.exe -m compileall main.py data database handlers services
+```
+
+Быстрые unit-тесты чистой игровой логики:
+
+```powershell
+.\venv\Scripts\python.exe -m unittest discover
+```

@@ -1,7 +1,7 @@
 ﻿import random
 from html import escape
 from datetime import datetime, timedelta
-from aiogram import Router, types, F
+from aiogram import Router, types
 from aiogram.filters import Command
 from database.db_manager import db  # Импортируем готовый экземпляр
 from data.runtime_state import runtime_state
@@ -181,9 +181,6 @@ def roll_hunt_reward(user) -> int:
     base_max = 2 + life_stage
     return random.randint(base_min, base_max) + HUNT_CLASS_REWARD_BONUS.get(cat_class, 0)
 
-
-
-
 def is_real_file_id(file_id: str) -> bool:
     return bool(file_id and not file_id.startswith("FILE_ID_"))
 
@@ -196,20 +193,6 @@ async def answer_with_optional_photo(message: types.Message, photo_id: str, text
             parse_mode="HTML"
         )
     return await message.answer(text, parse_mode="HTML")
-
-@router.message(F.animation)
-async def get_animation_id(message: types.Message):
-    print(f"ID твоей гифки: {message.animation.file_id}")
-    await message.answer(f"ID получен и выведен в консоль!")
-
-# Не забудь импортировать F: from aiogram import F
-
-@router.message(F.photo)
-async def get_photo_id(message: types.Message):
-    # Telegram присылает фото в нескольких размерах. Нам нужен самый большой.
-    photo_id = message.photo[-1].file_id
-    print(f"ID твоей картинки: {photo_id}")
-    await message.answer(f"ID картинки получен!")
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
