@@ -26,15 +26,15 @@ Telegram-бот с игровой петлей про рыбов, мышей, р
 2. Создай свежее окружение:
 
 ```powershell
-py -3 -m venv venv
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 Если `py` не установлен, используй полный путь к своему `python.exe`:
 
 ```powershell
-python -m venv venv
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 3. Подними PostgreSQL:
@@ -61,10 +61,32 @@ Copy-Item .env.example .env
 5. Запусти бота:
 
 ```powershell
-.\venv\Scripts\python.exe main.py
+.\.venv\Scripts\python.exe main.py
 ```
 
-`venv` не хранится в git и может ломаться при переносе проекта между пользователями или машинами. Если окружение ссылается на несуществующий Python, проще удалить папку `venv` и создать её заново командами выше.
+`.venv` не хранится в git и может ломаться при переносе проекта между пользователями или машинами. Если окружение ссылается на несуществующий Python, проще удалить папку `.venv` и создать её заново командами выше.
+
+## Удобный запуск
+
+Открыть проект в VS Code и сразу прогнать быстрые проверки:
+
+```powershell
+.\scripts\dev.cmd
+```
+
+Только проверки, без открытия VS Code:
+
+```powershell
+.\scripts\dev.cmd -NoCode
+```
+
+Открыть VS Code и запустить бота после проверок:
+
+```powershell
+.\scripts\dev.cmd -Bot
+```
+
+В VS Code также доступны задачи: `Catsyndicate: check all`, `Catsyndicate: test`, `Catsyndicate: compile`, `Catsyndicate: run bot`.
 
 ## Документация
 
@@ -78,11 +100,11 @@ Copy-Item .env.example .env
 Синтаксис проекта:
 
 ```powershell
-.\venv\Scripts\python.exe -m compileall main.py data database handlers services
+.\.venv\Scripts\python.exe -m compileall main.py data database handlers services
 ```
 
 Быстрые unit-тесты чистой игровой логики:
 
 ```powershell
-.\venv\Scripts\python.exe -m unittest discover
+.\.venv\Scripts\python.exe -m unittest discover
 ```

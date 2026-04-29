@@ -1,0 +1,55 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Catsyndicate: test",
+            "type": "shell",
+            "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+            "args": [
+                "-m",
+                "unittest",
+                "discover"
+            ],
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "Catsyndicate: compile",
+            "type": "shell",
+            "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+            "args": [
+                "-m",
+                "compileall",
+                "main.py",
+                "data",
+                "database",
+                "handlers",
+                "services"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "Catsyndicate: check all",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Catsyndicate: test",
+                "Catsyndicate: compile"
+            ],
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Catsyndicate: run bot",
+            "type": "shell",
+            "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+            "args": [
+                "main.py"
+            ],
+            "group": "build",
+            "problemMatcher": []
+        }
+    ]
+}
