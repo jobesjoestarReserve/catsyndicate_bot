@@ -10,12 +10,14 @@ class FakeDB:
         self.current_time = None
         self.chat_id = None
         self.user_id = None
+        self.job_type = None
 
-    async def get_due_mouse_jobs(self, current_time=None, chat_id=None, user_id=None):
+    async def get_due_mouse_jobs(self, current_time=None, chat_id=None, user_id=None, job_type=None):
         self.current_time = current_time
         self.chat_id = chat_id
         self.user_id = user_id
-        return [
+        self.job_type = job_type
+        jobs = [
             {
                 "id": 1,
                 "job_type": "work",
@@ -45,6 +47,9 @@ class FakeDB:
                 },
             },
         ]
+        if job_type is None:
+            return jobs
+        return [job for job in jobs if job["job_type"] == job_type]
 
     async def complete_mouse_work_job(self, *args):
         return {"mice_count": 4, "balance": 11}
@@ -71,12 +76,29 @@ class MouseJobTests(unittest.IsolatedAsyncioTestCase):
                 fake_bot,
                 chat_id=20,
                 user_id=10,
+                job_type="work",
+            )
+
+        self.assertEqual(completed, 1)
+        self.assertEqual(fake_db.chat_id, 20)
+        self.assertEqual(fake_db.user_id, 10)
+        self.assertEqual(fake_db.job_type, "work")
+        self.assertIsInstance(fake_db.current_time, datetime)
+        self.assertEqual(len(fake_bot.messages), 1)
+
+    async def test_complete_due_mouse_jobs_without_type_finishes_all_due_jobs(self):
+        fake_db = FakeDB()
+        fake_bot = FakeBot()
+
+        with patch.object(mouse_jobs, "db", fake_db):
+            completed = await mouse_jobs.complete_due_mouse_jobs(
+                fake_bot,
+                chat_id=20,
+                user_id=10,
             )
 
         self.assertEqual(completed, 2)
-        self.assertEqual(fake_db.chat_id, 20)
-        self.assertEqual(fake_db.user_id, 10)
-        self.assertIsInstance(fake_db.current_time, datetime)
+        self.assertIsNone(fake_db.job_type)
         self.assertEqual(len(fake_bot.messages), 2)
 
 

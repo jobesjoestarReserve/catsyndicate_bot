@@ -60,7 +60,7 @@ async def cmd_grow(message: types.Message):
     user_id = message.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        return await message.answer("Сначала /start")
+        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
     await touch_current_user(message, user)
 
     life_stage = get_life_stage(user)
@@ -85,7 +85,7 @@ async def cmd_grow(message: types.Message):
         return await message.answer(
             (
                 f"🐟 Для роста нужно <b>{cost}</b> рыбов, а в миске сейчас <b>{balance}</b>.\n"
-                "Добывай рыбов через <code>/meow</code>, <code>/work</code> или события."
+                "Добывай рыбов через <code>мяу</code>, <code>работа</code> или события."
             ),
             parse_mode="HTML",
         )

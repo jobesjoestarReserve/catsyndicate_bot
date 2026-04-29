@@ -18,7 +18,7 @@ router = Router()
 async def cmd_profile(message: types.Message):
     user = await db.get_user(message.from_user.id)
     if not user:
-        return await message.answer("Сначала /start")
+        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
 
     await db.touch_user(message.from_user.id)
     cat_name = user["cat_name"]
@@ -41,6 +41,6 @@ async def cmd_profile(message: types.Message):
         f"🎭 <b>Класс:</b> {cat_class}\n"
         f"💰 <b>Баланс:</b> {user['balance']} 🐟\n\n"
         f"📈 <b>Опыт жизни:</b>\n<code>{bar}</code> {progress}% — <b>{progress_text}</b>\n"
-        f"Расти: <code>/grow</code>"
+        f"Расти: <code>расти</code>"
     )
     await message.answer(text, parse_mode="HTML", reply_markup=main_menu_keyboard())

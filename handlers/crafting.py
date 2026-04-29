@@ -15,10 +15,18 @@ from services.crafting import (
     get_equipment_slot,
     get_item,
     get_recipe,
+    get_recipe_id,
     get_slot_item_names,
 )
 from services.game_utils import touch_current_user
-from services.text_aliases import CRAFT_ALIASES, GEAR_ALIASES, is_alias
+from services.text_aliases import (
+    CRAFT_ALIASES,
+    EQUIP_PREFIXES,
+    GEAR_ALIASES,
+    USE_ITEM_PREFIXES,
+    is_alias,
+    parse_prefixed_arg,
+)
 from services.ui import craft_home_keyboard, gear_keyboard, recipe_keyboard
 
 router = Router()
@@ -26,6 +34,14 @@ router = Router()
 
 def get_args(message: types.Message) -> list[str]:
     return (message.text or "").split()[1:]
+
+
+def get_named_arg(message: types.Message, prefixes: set[str]) -> str | None:
+    prefixed = parse_prefixed_arg(message.text, prefixes)
+    if prefixed is not None:
+        return prefixed
+    args = get_args(message)
+    return " ".join(args) if args else None
 
 
 def format_missing_resource(name: str, needed: int, available: int) -> str:
@@ -74,7 +90,7 @@ async def cmd_craft(message: types.Message):
     user_id = message.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        return await message.answer("Сначала /start")
+        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
     await touch_current_user(message, user)
 
     args = get_args(message)
@@ -85,7 +101,7 @@ async def cmd_craft(message: types.Message):
             reply_markup=craft_home_keyboard(),
         )
 
-    recipe_id = args[0].lower()
+    recipe_id = get_recipe_id(" ".join(args))
     text, _ = await craft_recipe_for_user(user_id, recipe_id)
     await message.answer(text, parse_mode="HTML", reply_markup=craft_home_keyboard())
 
@@ -117,7 +133,7 @@ async def cb_craft_make(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        await callback.answer("Сначала /start", show_alert=True)
+        await callback.answer("Сначала напиши старт", show_alert=True)
         return
     recipe_id = callback.data.split(":", 1)[1]
     text, ok = await craft_recipe_for_user(user_id, recipe_id)
@@ -130,7 +146,7 @@ async def cb_equip_item(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        await callback.answer("Сначала /start", show_alert=True)
+        await callback.answer("Сначала напиши старт", show_alert=True)
         return
 
     recipe_id = callback.data.split(":", 1)[1]
@@ -159,7 +175,7 @@ async def cb_use_item(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        await callback.answer("Сначала /start", show_alert=True)
+        await callback.answer("Сначала напиши старт", show_alert=True)
         return
 
     recipe_id = callback.data.split(":", 1)[1]
@@ -187,25 +203,28 @@ async def cb_use_item(callback: types.CallbackQuery):
     )
 
 
+@router.message(lambda message: parse_prefixed_arg(message.text, EQUIP_PREFIXES) is not None)
 @router.message(Command("equip"))
 async def cmd_equip(message: types.Message):
     user_id = message.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        return await message.answer("Сначала /start")
+        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
     await touch_current_user(message, user)
 
-    args = get_args(message)
-    if not args:
+    item_name = get_named_arg(message, EQUIP_PREFIXES)
+    if not item_name:
         return await message.answer(
-            "Формат: <code>/equip название предмета</code>\nПосмотреть экипировку: <code>/gear</code>",
+            "Напиши: <code>надеть название предмета</code>\nПосмотреть экипировку можно фразой <code>экипировка</code>.",
             parse_mode="HTML",
         )
 
-    item_name = " ".join(args)
+    recipe_id = get_recipe_id(item_name)
+    recipe = get_recipe(recipe_id) if recipe_id else None
+    item_name = recipe["name"] if recipe else item_name
     slot = get_equipment_slot(item_name)
     if not slot:
-        return await message.answer("Это не экипировка из кузницы. Проверь название в /inv или /craft.")
+        return await message.answer("Это не экипировка из кузницы. Проверь название в инвентаре или кузнице.")
 
     equipped = await db.equip_item(user_id, item_name, get_slot_item_names(slot))
     if not equipped:
@@ -224,7 +243,7 @@ async def cmd_gear(message: types.Message):
     user_id = message.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        return await message.answer("Сначала /start")
+        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
     await touch_current_user(message, user)
 
     equipped = await db.get_equipped_items(user_id)
@@ -251,7 +270,7 @@ async def cb_open_gear(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        await callback.answer("Сначала /start", show_alert=True)
+        await callback.answer("Сначала напиши старт", show_alert=True)
         return
     equipped = await db.get_equipped_items(user_id)
     by_slot = {}
@@ -273,25 +292,28 @@ async def cb_open_gear(callback: types.CallbackQuery):
     )
 
 
+@router.message(lambda message: parse_prefixed_arg(message.text, USE_ITEM_PREFIXES) is not None)
 @router.message(Command("use"))
 async def cmd_use(message: types.Message):
     user_id = message.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        return await message.answer("Сначала /start")
+        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
     await touch_current_user(message, user)
 
-    args = get_args(message)
-    if not args:
+    item_name = get_named_arg(message, USE_ITEM_PREFIXES)
+    if not item_name:
         return await message.answer(
-            "Формат: <code>/use название расходника</code>\nРасходники видны в <code>/inv</code>.",
+            "Напиши: <code>использовать название расходника</code>\nРасходники видны в инвентаре.",
             parse_mode="HTML",
         )
 
-    item_name = " ".join(args)
+    recipe_id = get_recipe_id(item_name)
+    recipe = get_recipe(recipe_id) if recipe_id else None
+    item_name = recipe["name"] if recipe else item_name
     effect = get_consumable_effect(item_name)
     if not effect:
-        return await message.answer("Это не расходник из кузницы. Проверь название в /inv или /craft.")
+        return await message.answer("Это не расходник из кузницы. Проверь название в инвентаре или кузнице.")
 
     remaining = await db.consume_inventory_item(user_id, item_name, "consumable")
     if remaining is None:

@@ -1,6 +1,6 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
-from services.crafting import get_item_recipe_id
+from services.crafting import get_item_recipe_id, get_recipe
 
 
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
@@ -34,7 +34,7 @@ def craft_home_keyboard() -> InlineKeyboardMarkup:
 
 def recipe_keyboard(recipe_ids: list[str]) -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(text=f"Собрать: {recipe_id}", callback_data=f"craft_make:{recipe_id}")]
+        [InlineKeyboardButton(text=f"Собрать: {get_recipe(recipe_id)['name']}", callback_data=f"craft_make:{recipe_id}")]
         for recipe_id in recipe_ids
     ]
     rows.append([InlineKeyboardButton(text="⬅️ Назад в кузницу", callback_data="craft_home")])

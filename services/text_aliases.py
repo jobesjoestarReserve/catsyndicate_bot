@@ -11,6 +11,11 @@ PROFILE_ALIASES = {
     "кот",
 }
 
+START_ALIASES = {
+    "старт",
+    "начать",
+}
+
 STATS_ALIASES = {
     "досье",
     "статы",
@@ -37,6 +42,17 @@ GEAR_ALIASES = {
     "броня",
 }
 
+EQUIP_PREFIXES = {
+    "надеть",
+    "экипировать",
+}
+
+USE_ITEM_PREFIXES = {
+    "использовать",
+    "юзнуть",
+    "применить",
+}
+
 MEOW_ALIASES = {
     "мяу",
     "рыбачить",
@@ -46,6 +62,7 @@ MEOW_ALIASES = {
 
 HUNT_ALIASES = {
     "охота",
+    "на охоту",
     "охотиться",
     "ловить мышей",
     "мыши",
@@ -58,24 +75,32 @@ WORK_ALIASES = {
 }
 
 MINE_ALIASES = {
-    "шахта",
-    "в шахту",
+    "подвал",
+    "в подвал",
     "копать",
     "добыча",
 }
 
-MOUSE_RETURN_ALIASES = {
+WORK_RETURN_ALIASES = {
     "завершить работу",
-    "проверить мышей",
-    "вернуть мышей",
-    "мыши домой",
-    "забрать мышей",
+    "проверить работу",
+    "вернуть с работы",
+    "мыши с работы",
+}
+
+MINE_RETURN_ALIASES = {
+    "завершить подвал",
+    "проверить подвал",
+    "вернуть из подвала",
+    "мыши из подвала",
+    "забрать из подвала",
 }
 
 GROW_ALIASES = {
     "расти",
     "рост",
     "прокачка",
+    "жрать",
 }
 
 BITE_ALIASES = {
@@ -123,3 +148,13 @@ def is_alias_with_count(text: str | None, aliases: set[str]) -> bool:
         return False
 
     return " ".join(parts[:-1]) in aliases
+
+
+def parse_prefixed_arg(text: str | None, prefixes: set[str]) -> str | None:
+    normalized = normalize_text(text)
+    for prefix in sorted(prefixes, key=len, reverse=True):
+        if normalized == prefix:
+            return ""
+        if normalized.startswith(prefix + " "):
+            return normalized[len(prefix) + 1:].strip()
+    return None

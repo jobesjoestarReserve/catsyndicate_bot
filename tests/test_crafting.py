@@ -3,6 +3,7 @@ import unittest
 from services.crafting import (
     RECIPES,
     format_cost,
+    format_recipe_line,
     get_consumable_effect,
     get_equipment_bonus,
     get_equipment_slot,
@@ -49,6 +50,12 @@ class CraftingTests(unittest.TestCase):
                 self.assertTrue(recipe["cost"])
                 self.assertTrue(format_cost(recipe["cost"]))
                 self.assertIs(get_recipe(recipe_id), recipe)
+
+    def test_recipe_lines_show_localized_names_not_internal_ids(self):
+        line = format_recipe_line("valerian", RECIPES["valerian"])
+
+        self.assertIn("Валерьянка", line)
+        self.assertNotIn("valerian", line)
 
 
 if __name__ == "__main__":

@@ -79,7 +79,7 @@ flowchart TD
     DB --> INV["inventory<br/>resources / consumables / equipment / buffs"]
     DB --> CD["cooldowns<br/>per-user command cooldowns"]
     DB --> CHAT["chat_activity<br/>chat activity + autospawn gate"]
-    DB --> EVENTS["chat_events<br/>boss / fish_drop / resource_drop"]
+    DB --> EVENTS["chat_events<br/>boss variants / fish_drop / resource_drop"]
     DB --> PARTS["event_participants<br/>damage / grabs"]
 ```
 
@@ -155,7 +155,7 @@ flowchart TD
 | Профиль | `handlers/profile.py` |
 | Инвентарь | `handlers/inventory.py` |
 | Кузница и экипировка | `handlers/crafting.py` |
-| Работа и шахта | `handlers/mice.py` |
+| Работа и подвал | `handlers/mice.py` |
 | PvP | `handlers/combat.py` |
 | События | `handlers/events.py` |
 | Рост | `handlers/progression.py` |

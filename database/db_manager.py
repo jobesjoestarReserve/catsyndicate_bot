@@ -429,7 +429,7 @@ class DBManager:
                 )
                 return {"job": job, "mice_left": mice_left}
 
-    async def get_due_mouse_jobs(self, limit=20, current_time=None, chat_id=None, user_id=None):
+    async def get_due_mouse_jobs(self, limit=20, current_time=None, chat_id=None, user_id=None, job_type=None):
         current_time = current_time or datetime.now()
         async with self.pool.acquire() as conn:
             return await conn.fetch(
@@ -440,6 +440,7 @@ class DBManager:
                   AND complete_at <= $2
                   AND ($3::bigint IS NULL OR chat_id = $3)
                   AND ($4::bigint IS NULL OR user_id = $4)
+                  AND ($5::text IS NULL OR job_type = $5)
                 ORDER BY complete_at
                 LIMIT $1
                 """,
@@ -447,6 +448,7 @@ class DBManager:
                 current_time,
                 chat_id,
                 user_id,
+                job_type,
             )
 
     async def complete_mouse_work_job(self, job_id, user_id, fish_reward, mice_returned, resources, authority):

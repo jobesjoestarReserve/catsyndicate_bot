@@ -10,7 +10,14 @@ from data.texts import WORK_CLASS_LABELS, WORK_CLASS_PROFILES
 from services.crafting import get_equipment_bonus
 from services.game_utils import format_cooldown, get_life_stage, touch_current_user
 from services.mouse_jobs import complete_due_mouse_jobs, format_job_duration
-from services.text_aliases import MINE_ALIASES, MOUSE_RETURN_ALIASES, WORK_ALIASES, is_alias, is_alias_with_count
+from services.text_aliases import (
+    MINE_ALIASES,
+    MINE_RETURN_ALIASES,
+    WORK_ALIASES,
+    WORK_RETURN_ALIASES,
+    is_alias,
+    is_alias_with_count,
+)
 
 router = Router()
 
@@ -105,17 +112,17 @@ def get_mine_cooldown(user) -> int:
 
 def format_not_enough_mice_for_work(needed: int, current: int) -> str:
     return (
-        f"🐭 Для <b>/work</b> нужна мышиная бригада. "
+        f"🐭 Для работы нужна мышиная бригада. "
         f"Нужно <b>{needed}</b>, сейчас в подчинении <b>{current}</b>.\n"
-        "Сначала добудь мышей через <code>/hunt</code>, потом отправляй их за рыбами."
+        "Сначала добудь мышей через <code>охота</code>, потом отправляй их за рыбами."
     )
 
 
 def format_not_enough_mice_for_mine(needed: int, current: int) -> str:
     return (
-        f"🐭 Для <b>/send_mice mine</b> нужны мыши-добытчики. "
+        f"🐭 Для подвала нужны мыши-добытчики. "
         f"Нужно <b>{needed}</b>, сейчас в подчинении <b>{current}</b>.\n"
-        "Сначала поймай мышей через <code>/hunt</code>, потом отправляй их за шерстью, металлом и мусором."
+        "Сначала поймай мышей через <code>охота</code>, потом отправляй их в подвал за шерстью, металлом и мусором."
     )
 
 
@@ -237,25 +244,36 @@ def roll_mine_result(user, mice_sent: int):
     return {name: amount for name, amount in resources.items() if amount > 0}, mice_sent - lost, lost
 
 
-@router.message(lambda message: is_alias(message.text, MOUSE_RETURN_ALIASES))
-@router.message(Command("return_mice", "finish_jobs"))
-async def cmd_return_mice(message: types.Message):
+async def finish_due_jobs(message: types.Message, job_type: str, label: str):
     user_id = message.from_user.id
     completed = await complete_due_mouse_jobs(
         message.bot,
         chat_id=message.chat.id,
         user_id=user_id,
+        job_type=job_type,
     )
     if completed:
         return await message.answer(
-            f"🐭 Проверил смены: завершено <b>{completed}</b>. Мыши уже несут отчёт выше.",
+            f"🐭 Проверил {label}: завершено <b>{completed}</b>. Мыши уже несут отчёт выше.",
             parse_mode="HTML",
         )
 
     await message.answer(
-        "🐭 Готовых смен пока нет. Если таймер уже точно прошёл, попробуй ещё раз через несколько секунд.",
+        f"🐭 Готовых задач для {label} пока нет. Если таймер уже точно прошёл, попробуй ещё раз через несколько секунд.",
         parse_mode="HTML",
     )
+
+
+@router.message(lambda message: is_alias(message.text, WORK_RETURN_ALIASES))
+@router.message(Command("finish_work"))
+async def cmd_return_work_mice(message: types.Message):
+    return await finish_due_jobs(message, "work", "работу")
+
+
+@router.message(lambda message: is_alias(message.text, MINE_RETURN_ALIASES))
+@router.message(Command("finish_basement"))
+async def cmd_return_mine_mice(message: types.Message):
+    return await finish_due_jobs(message, "mine", "подвал")
 
 
 @router.message(lambda message: is_alias_with_count(message.text, WORK_ALIASES))
@@ -264,11 +282,11 @@ async def cmd_work(message: types.Message):
     user_id = message.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        return await message.answer("Сначала /start")
+        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
 
     mice_sent = parse_positive_count(message, default=1, max_value=25)
     if mice_sent is None:
-        return await message.answer("Формат: <code>/work</code> или <code>/work 5</code>", parse_mode="HTML")
+        return await message.answer("Напиши: <code>работа</code> или <code>работа 5</code>", parse_mode="HTML")
 
     await touch_current_user(message, user)
     available_at = await db.get_cooldown(user_id, WORK_COMMAND)
@@ -357,12 +375,12 @@ async def cmd_send_mice(message: types.Message):
     user_id = message.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        return await message.answer("Сначала /start")
+        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
 
     action, mice_sent = parse_send_mice_args(message)
     if action != "mine" or mice_sent is None:
         return await message.answer(
-            "Формат: <code>/send_mice mine</code> или <code>/send_mice mine 5</code>",
+            "Напиши: <code>подвал</code> или <code>подвал 5</code>",
             parse_mode="HTML"
         )
 
@@ -408,14 +426,14 @@ async def cmd_send_mice(message: types.Message):
         mice_sent,
     )
     if not start_result:
-        return await message.answer("🐭 Мыши передумали спускаться в шахту. Попробуй ещё раз.")
+        return await message.answer("🐭 Мыши передумали спускаться в подвал. Попробуй ещё раз.")
 
     if runtime_state.cooldowns_enabled:
         await db.set_cooldown(user_id, SEND_MICE_COMMAND, complete_at)
 
     await message.answer(
         (
-            f"⛏️ В шахту ушли <b>{mice_sent}</b> мышей.\n"
+            f"⛏️ В подвал ушли <b>{mice_sent}</b> мышей.\n"
             f"Вернутся примерно через <b>{format_job_duration(duration)}</b>.\n"
             f"Мышей дома: <b>{start_result['mice_left']}</b>\n\n"
             "Пока добытчики в подвале, они не участвуют в защите."

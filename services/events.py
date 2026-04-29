@@ -7,6 +7,7 @@ from data.runtime_state import runtime_state
 from data.texts import (
     EVENT_BOSS_DEFEATED_TEXTS,
     EVENT_BOSS_EXPIRED_TEXTS,
+    EVENT_BOSS_HIT_TEXTS,
     EVENT_SPAWN_TEXTS,
 )
 from database.db_manager import db
@@ -18,18 +19,22 @@ EVENT_CHECK_SECONDS = 12 * 60
 EVENT_ACTIVE_CHAT_SECONDS = 60 * 60
 EVENT_AUTOSPAWN_CHANCE = 16
 EVENT_CHAT_COOLDOWN_SECONDS = 2 * 60 * 60
+BOSS_EVENT_TYPES = ("boss_dog", "boss_vacuum", "boss_slipper")
+BOSS_CONFIG = {
+    "duration_seconds": 8 * 60,
+    "hp_min": 65,
+    "hp_max": 95,
+    "reward_pool": 35,
+    "wool_pool": 0,
+    "metal_pool": 0,
+    "trash_pool": 0,
+    "weight": 12,
+}
 
 EVENT_CONFIGS = {
-    "boss": {
-        "duration_seconds": 8 * 60,
-        "hp_min": 65,
-        "hp_max": 95,
-        "reward_pool": 35,
-        "wool_pool": 0,
-        "metal_pool": 0,
-        "trash_pool": 0,
-        "weight": 35,
-    },
+    "boss_dog": BOSS_CONFIG,
+    "boss_vacuum": BOSS_CONFIG,
+    "boss_slipper": BOSS_CONFIG,
     "fish_drop": {
         "duration_seconds": 5 * 60,
         "hp_min": 0,
@@ -62,8 +67,13 @@ RESOURCE_NAMES = {
 def normalize_event_type(event_type: str | None) -> str | None:
     aliases = {
         "boss": "boss",
-        "dog": "boss",
-        "mega_dog": "boss",
+        "dog": "boss_dog",
+        "mega_dog": "boss_dog",
+        "vacuum": "boss_vacuum",
+        "robot": "boss_vacuum",
+        "roomba": "boss_vacuum",
+        "slipper": "boss_slipper",
+        "tapok": "boss_slipper",
         "fish": "fish_drop",
         "fish_drop": "fish_drop",
         "resources": "resource_drop",
@@ -72,6 +82,14 @@ def normalize_event_type(event_type: str | None) -> str | None:
         "resource_drop": "resource_drop",
     }
     return aliases.get((event_type or "").lower())
+
+
+def is_boss_event(event_type: str) -> bool:
+    return event_type == "boss" or event_type in BOSS_EVENT_TYPES
+
+
+def choose_boss_event_type() -> str:
+    return random.choice(BOSS_EVENT_TYPES)
 
 
 def choose_event_type() -> str:
@@ -83,29 +101,32 @@ def choose_event_type() -> str:
 def get_event_title(event_type: str) -> str:
     return {
         "boss": "Мега-пёс",
+        "boss_dog": "Мега-пёс",
+        "boss_vacuum": "Большущий робот-пылесос",
+        "boss_slipper": "Тапок-Титан",
         "fish_drop": "Рыбный контейнер",
         "resource_drop": "Контейнер ресурсов",
     }.get(event_type, event_type)
 
 
 def get_event_action(event_type: str) -> str:
-    return "/bite_boss" if event_type == "boss" else "/grab"
+    return "босс" if is_boss_event(event_type) else "контейнер"
 
 
 def format_event_status(event) -> str:
     event_type = event["event_type"]
-    if event_type == "boss":
+    if is_boss_event(event_type):
         return (
-            f"🐕 <b>{get_event_title(event_type)}</b>\n"
+            f"⚔️ <b>{get_event_title(event_type)}</b>\n"
             f"HP: <b>{event['hp_current']}/{event['hp_max']}</b>\n"
-            f"Команда: <code>/bite_boss</code>"
+            f"Действие: <code>босс</code>"
         )
 
     if event_type == "fish_drop":
         return (
             f"📦 <b>{get_event_title(event_type)}</b>\n"
             f"Рыбов осталось: <b>{event['reward_pool']}</b> 🐟\n"
-            f"Команда: <code>/grab</code>"
+            f"Действие: <code>контейнер</code>"
         )
 
     resources = []
@@ -116,7 +137,7 @@ def format_event_status(event) -> str:
     return (
         f"🧰 <b>{get_event_title(event_type)}</b>\n"
         f"Осталось: {', '.join(resources) if resources else '<b>пусто</b>'}\n"
-        f"Команда: <code>/grab</code>"
+        f"Действие: <code>контейнер</code>"
     )
 
 
@@ -127,8 +148,10 @@ def format_spawn_message(event) -> str:
 
 async def spawn_chat_event(chat_id: int, event_type: str | None = None):
     event_type = normalize_event_type(event_type) or choose_event_type()
+    if event_type == "boss":
+        event_type = choose_boss_event_type()
     config = EVENT_CONFIGS[event_type]
-    hp_max = random.randint(config["hp_min"], config["hp_max"]) if event_type == "boss" else 0
+    hp_max = random.randint(config["hp_min"], config["hp_max"]) if is_boss_event(event_type) else 0
     ends_at = datetime.now() + timedelta(seconds=config["duration_seconds"])
     return await db.create_chat_event(
         chat_id=chat_id,
@@ -195,8 +218,8 @@ async def expire_events(bot):
             event["chat_id"],
             datetime.now() + timedelta(seconds=EVENT_CHAT_COOLDOWN_SECONDS),
         )
-        if event["event_type"] == "boss":
-            text = random.choice(EVENT_BOSS_EXPIRED_TEXTS)
+        if is_boss_event(event["event_type"]):
+            text = random.choice(EVENT_BOSS_EXPIRED_TEXTS[event["event_type"]])
         else:
             text = f"🕳 <b>{get_event_title(event['event_type'])} исчез.</b>\nКто успел, тот синдикат."
         try:
@@ -241,8 +264,13 @@ async def autospawn_loop(bot):
 def format_boss_defeated(result) -> str:
     participants = result["participants"]
     reward = result["event"]["reward_pool"]
+    event_type = result["event"]["event_type"]
     return (
-        f"{random.choice(EVENT_BOSS_DEFEATED_TEXTS)}\n\n"
+        f"{random.choice(EVENT_BOSS_DEFEATED_TEXTS[event_type])}\n\n"
         f"Участников: <b>{len(participants)}</b>\n"
         f"Каждому: <b>{reward}</b> 🐟 и <b>+2</b> авторитета"
     )
+
+
+def get_boss_hit_text(event_type: str) -> str:
+    return random.choice(EVENT_BOSS_HIT_TEXTS[event_type])

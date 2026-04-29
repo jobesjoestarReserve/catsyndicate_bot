@@ -15,15 +15,18 @@ from services.events import (  # noqa: E402
 
 class EventTests(unittest.TestCase):
     def test_event_type_aliases(self):
-        self.assertEqual(normalize_event_type("dog"), "boss")
+        self.assertEqual(normalize_event_type("boss"), "boss")
+        self.assertEqual(normalize_event_type("dog"), "boss_dog")
+        self.assertEqual(normalize_event_type("vacuum"), "boss_vacuum")
+        self.assertEqual(normalize_event_type("slipper"), "boss_slipper")
         self.assertEqual(normalize_event_type("fish"), "fish_drop")
         self.assertEqual(normalize_event_type("resources"), "resource_drop")
         self.assertIsNone(normalize_event_type("unknown"))
 
     def test_event_actions_match_event_kind(self):
-        self.assertEqual(get_event_action("boss"), "/bite_boss")
-        self.assertEqual(get_event_action("fish_drop"), "/grab")
-        self.assertEqual(get_event_action("resource_drop"), "/grab")
+        self.assertEqual(get_event_action("boss"), "босс")
+        self.assertEqual(get_event_action("fish_drop"), "контейнер")
+        self.assertEqual(get_event_action("resource_drop"), "контейнер")
 
     def test_event_configs_are_spawnable(self):
         for event_type, config in EVENT_CONFIGS.items():

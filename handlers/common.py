@@ -27,7 +27,7 @@ from services.game_utils import (
 )
 from services.crafting import get_equipment_bonus
 from services.progression import get_grow_cost, get_life_xp_required, get_progress_percent
-from services.text_aliases import HUNT_ALIASES, MEOW_ALIASES, STATS_ALIASES, is_alias
+from services.text_aliases import HUNT_ALIASES, MEOW_ALIASES, START_ALIASES, STATS_ALIASES, is_alias
 from services.ui import main_menu_keyboard
 
 router = Router()
@@ -197,6 +197,7 @@ async def answer_with_optional_photo(message: types.Message, photo_id: str, text
         )
     return await message.answer(text, parse_mode="HTML")
 
+@router.message(lambda message: is_alias(message.text, START_ALIASES))
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
     user = await db.get_user(message.from_user.id)
@@ -210,7 +211,7 @@ async def cmd_start(message: types.Message):
             caption=(
                 f"🐱Добро пожаловать в Синдикат!\n\n"
                 f"Твой статус: {CAT_STATUSES[1]}\n"
-                "Воруй рыбов через /meow и расти в иерархии."
+                "Добывай рыбов фразой «мяу» и расти в иерархии."
             ),
             parse_mode="HTML",
             reply_markup=main_menu_keyboard(),
@@ -228,7 +229,7 @@ async def cmd_meow(message: types.Message):
     user_id = message.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        return await message.answer("Сначала /start")
+        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
 
     await touch_current_user(message, user)
     now = datetime.now()
@@ -318,7 +319,7 @@ async def cmd_hunt(message: types.Message):
     user_id = message.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        return await message.answer("Сначала /start")
+        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
 
     await touch_current_user(message, user)
     now = datetime.now()
@@ -425,7 +426,7 @@ async def cmd_stats(message: types.Message):
         f"━━━━━━━━━━━━━━\n"
         f"📚 Опыт жизни: <b>{next_life_text}</b>\n"
         f"💡 Попытка роста стоит: <code>{grow_cost_text}</code>\n"
-        f"Используй /grow чтобы стать круче."
+        f"Напиши <code>расти</code>, чтобы стать круче."
     )
     # Здесь можно прикрепить ту самую крутую картинку Синдиката
     await message.answer(text, parse_mode="HTML", reply_markup=main_menu_keyboard())
@@ -441,7 +442,7 @@ async def cmd_reset(message: types.Message):
         await db.delete_user(user_id)
         await message.answer(
             "⚠️ <b>Профиль Синдиката аннигилирован!</b>\n"
-            "Твои рыбы сгорели, а жизнь обнулилась. Пиши /start, чтобы начать с чистого листа.",
+            "Твои рыбы сгорели, а жизнь обнулилась. Напиши <code>старт</code>, чтобы начать с чистого листа.",
             parse_mode="HTML"
         )
     else:

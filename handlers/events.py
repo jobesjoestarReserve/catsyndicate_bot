@@ -6,7 +6,7 @@ from aiogram import Router, types
 from aiogram.filters import Command
 
 from data.runtime_state import runtime_state
-from data.texts import EVENT_BOSS_HIT_TEXTS, EVENT_BUSY_TEXTS, EVENT_EMPTY_TEXTS, EVENT_GRAB_TEXTS
+from data.texts import EVENT_BUSY_TEXTS, EVENT_EMPTY_TEXTS, EVENT_GRAB_TEXTS
 from database.db_manager import db
 from handlers.admin import require_admin
 from services.events import (
@@ -15,7 +15,9 @@ from services.events import (
     format_boss_defeated,
     format_event_status,
     format_spawn_message,
+    get_boss_hit_text,
     get_event_title,
+    is_boss_event,
     normalize_event_type,
     reward_boss_if_defeated,
     roll_boss_damage,
@@ -65,11 +67,11 @@ async def cmd_bite_boss(message: types.Message):
     user_id = message.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        return await message.answer("Сначала /start")
+        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
     await touch_current_user(message, user)
 
     event = await db.get_active_event(message.chat.id)
-    if not event or event["event_type"] != "boss":
+    if not event or not is_boss_event(event["event_type"]):
         return await message.answer("🐕 Босса во дворе нет. Можно кусать воздух, но авторитет не поймёт.")
 
     now = datetime.now()
@@ -103,7 +105,7 @@ async def cmd_bite_boss(message: types.Message):
     name = escape(user["cat_name"] or message.from_user.first_name or "кот")
     await message.answer(
         (
-            f"{random.choice(EVENT_BOSS_HIT_TEXTS)}\n\n"
+            f"{get_boss_hit_text(updated_event['event_type'])}\n\n"
             f"<b>{name}</b> нанёс <b>{damage}</b> урона.\n"
             f"HP босса: <b>{updated_event['hp_current']}/{updated_event['hp_max']}</b>"
         ),
@@ -117,7 +119,7 @@ async def cmd_grab(message: types.Message):
     user_id = message.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        return await message.answer("Сначала /start")
+        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
     await touch_current_user(message, user)
 
     event = await db.get_active_event(message.chat.id)

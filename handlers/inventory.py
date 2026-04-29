@@ -26,30 +26,30 @@ async def get_inventory_view(user_id: int, user):
             for row in resources
         )
     else:
-        resources_text = "Ресурсов пока нет. Для крафта отправь мышей в шахту: <code>/send_mice mine</code>"
+        resources_text = "Ресурсов пока нет. Для крафта отправь мышей в подвал: <code>подвал</code> или <code>подвал 5</code>."
 
     consumables_text = (
         "\n".join(f"• {row['item_name']}: <b>{row['amount']}</b>" for row in consumables)
         if consumables
-        else "Расходников пока нет. Собери их через <code>/craft</code>."
+        else "Расходников пока нет. Собери их в кузнице."
     )
     equipment_text = (
         "\n".join(f"• {row['item_name']}: <b>{row['amount']}</b>" for row in equipment)
         if equipment
-        else "Свободной экипировки нет. Собери броню через <code>/craft</code>."
+        else "Свободной экипировки нет. Собери броню в кузнице."
     )
     equipped_lines = []
     for row in equipped:
         slot = get_equipment_slot(row["item_name"])
         label = SLOT_LABELS.get(slot, "слот")
         equipped_lines.append(f"• {label}: <b>{row['item_name']}</b>")
-    equipped_text = "\n".join(equipped_lines) if equipped_lines else "Ничего не надето. Используй <code>/equip название</code>."
+    equipped_text = "\n".join(equipped_lines) if equipped_lines else "Ничего не надето. Нажми кнопку предмета в инвентаре или напиши <code>надеть название</code>."
 
     text = (
         "🎒 <b>Инвентарь Синдиката</b>\n\n"
         f"🐟 Рыбов: <b>{user['balance']}</b>\n"
         f"🐭 Мышей: <b>{user['mice_count'] or 0}</b>\n"
-        "💼 Рыбы добываются через <code>/work</code>, ресурсы — через <code>/send_mice mine</code>.\n\n"
+        "💼 Рыбы добываются через <code>работа</code>, ресурсы — через <code>подвал</code>.\n\n"
         "<b>Ресурсы для крафта:</b>\n"
         f"{resources_text}\n\n"
         "<b>Расходники:</b>\n"
@@ -69,7 +69,7 @@ async def cmd_inventory(message: types.Message):
     user_id = message.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        return await message.answer("Сначала /start")
+        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
 
     await db.touch_user(user_id)
     text, keyboard = await get_inventory_view(user_id, user)
@@ -85,7 +85,7 @@ async def cb_open_inventory(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     user = await db.get_user(user_id)
     if not user:
-        await callback.answer("Сначала /start", show_alert=True)
+        await callback.answer("Сначала напиши старт", show_alert=True)
         return
 
     await db.touch_user(user_id)

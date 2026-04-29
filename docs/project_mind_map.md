@@ -28,7 +28,7 @@ mindmap
           "стабильнее рост"
           "меньше крит провалов"
           "лучше держит PvP"
-          "лучше шахта"
+          "лучше подвал"
         thief["Кот-Гопник / Вор"]
           "лучше /meow"
           "может красть рыбов в /bite"
@@ -76,7 +76,7 @@ mindmap
         "ресурс и рабочая сила"
         /hunt
         /work["/work, работа N: мыши уходят на смену"]
-        /send_mice_mine["/send_mice mine, шахта N: мыши уходят в добычу"]
+        /send_mice_mine["/send_mice mine, подвал N: мыши уходят в добычу"]
         "щит в будущих подземельях"
       Материалы
         wool["шерсть"]
@@ -108,7 +108,7 @@ mindmap
     UX
       "основная клавиатура после /start"
       "кнопки: Мяу, Охота, Инвентарь, Кузница, Экипировка, Досье"
-      "обычные фразы: мой котёнок, досье, инвентарь, кузница, работа 5, шахта 5"
+      "обычные фразы: мой котёнок, досье, инвентарь, кузница, работа 5, подвал 5"
       "в группах фразы требуют BotFather /setprivacy Disable"
       "inline-кнопки категорий кузницы"
       "inline-кнопки собрать/надеть/использовать"
@@ -136,7 +136,7 @@ mindmap
         "кулдаун чата"
         "не спавнит поверх активного события"
       Типы
-        boss["Мега-пёс"]
+        boss["Боссы: Мега-пёс / робот-пылесос / Тапок-Титан"]
         fish_drop["Рыбный контейнер"]
         resource_drop["Ресурсный контейнер"]
       Админ_ивенты
@@ -215,7 +215,7 @@ mindmap
 | `/use` | игрок | использует расходник и даёт бафф на следующую команду | `handlers/crafting.py` |
 | `/bite` | игрок | PvP-укус reply на игрока | `handlers/combat.py` |
 | `/top` | игрок | топ авторитета | `handlers/combat.py` |
-| `/bite_boss` | игрок | атакует активного Мега-пса | `handlers/events.py` |
+| `/bite_boss` | игрок | атакует активного босса | `handlers/events.py` |
 | `/grab` | игрок | забирает рыбов/ресурсы из контейнера | `handlers/events.py` |
 | `/event` | игрок/админ | показывает активное событие в текущем чате | `handlers/events.py` |
 | `/admin` | админ | список админ-команд | `handlers/admin.py` |
@@ -223,7 +223,7 @@ mindmap
 | `/cooldowns_off` | админ | выключает кулдауны | `handlers/admin.py` |
 | `/add_fish` | админ | выдаёт рыбов | `handlers/admin.py` |
 | `/reset_fish` | админ | обнуляет рыбов | `handlers/admin.py` |
-| `/spawn_event boss` | админ | запускает Мега-пса | `handlers/events.py` |
+| `/spawn_event boss` | админ | запускает случайного босса | `handlers/events.py` |
 | `/spawn_event fish` | админ | запускает рыбный контейнер | `handlers/events.py` |
 | `/spawn_event resources` | админ | запускает ресурсный контейнер | `handlers/events.py` |
 | `/events` | админ | список активных событий | `handlers/events.py` |
@@ -299,7 +299,7 @@ mindmap
 | `/meow` | рыбов | cooldown |
 | `/hunt` | мышей | cooldown |
 | `/work [N]` / `работа N` | рыбов через мышиную работу после задержки | мышей сразу, cooldown |
-| `/send_mice mine [N]` / `шахта N` | шерсть, металл, мусор после задержки | мышей сразу, cooldown |
+| `/send_mice mine [N]` / `подвал N` | шерсть, металл, мусор после задержки | мышей сразу, cooldown |
 | `/craft [recipe_id]` | расходники и экипировка | материалы |
 | `/use [название]` | бафф на следующую команду | расходник |
 | `/equip [название]` | бонус экипировки | предмет экипировки |
@@ -312,7 +312,7 @@ mindmap
 |---|---|
 | `/bite` | укусить игрока reply-сообщением |
 | `/top` | посмотреть топ авторитета |
-| `/bite_boss` | ударить активного Мега-пса |
+| `/bite_boss` | ударить активного босса |
 | `/grab` | забрать часть активного контейнера |
 | `/event` | посмотреть активное событие в текущем чате |
 
@@ -327,7 +327,7 @@ mindmap
 | `/add_fish USER_ID 100` | добавить рыбов игроку |
 | `/reset_fish` | обнулить рыбов себе |
 | `/reset_fish USER_ID` | обнулить рыбов игроку |
-| `/spawn_event boss` | вручную запустить Мега-пса |
+| `/spawn_event boss` | вручную запустить случайного босса |
 | `/spawn_event fish` | вручную запустить рыбный контейнер |
 | `/spawn_event resources` | вручную запустить ресурсный контейнер |
 | `/events` | список активных событий во всех чатах |
@@ -365,7 +365,7 @@ mindmap
 | `consume_buff` | потратить активный одноразовый бафф |
 | `get_cooldown` / `set_cooldown` | cooldown-ы команд |
 | `apply_grow_result` | применить результат `/grow` |
-| `start_mouse_job` | списать мышей и поставить отложенную работу/шахту одной транзакцией |
+| `start_mouse_job` | списать мышей и поставить отложенную работу/подвал одной транзакцией |
 | `complete_mouse_work_job` | завершить отложенную `/work` |
 | `complete_mice_mining_job` | завершить отложенную `/send_mice mine` |
 | `apply_bite_result` | применить PvP `/bite` |
@@ -388,8 +388,8 @@ mindmap
 | Награды мышей | `roll_hunt_reward` в `handlers/common.py` |
 | Cooldown `/work` | `WORK_COOLDOWN_BY_LIFE` в `handlers/mice.py` |
 | Награды `/work` | `roll_work_result` в `handlers/mice.py` |
-| Cooldown шахты | `MINE_COOLDOWN_BY_LIFE` в `handlers/mice.py` |
-| Ресурсы шахты | `roll_mine_result` в `handlers/mice.py` |
+| Cooldown подвала | `MINE_COOLDOWN_BY_LIFE` в `handlers/mice.py` |
+| Ресурсы подвала | `roll_mine_result` в `handlers/mice.py` |
 | Шанс PvP `/bite` | `get_bite_chance` в `handlers/combat.py` |
 | Урон PvP `/bite` | `get_bite_power` в `handlers/combat.py` |
 | Активность цели PvP | `BITE_ACTIVITY_WINDOW` в `handlers/combat.py` |

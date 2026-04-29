@@ -12,10 +12,10 @@ SLOT_LABELS = {
 }
 
 BUFF_LABELS = {
-    "grow_focus": "Валерьянка: следующая попытка /grow получает +10% к шансу и +10% XP.",
-    "meow_luck": "Кошачья мята: следующий /meow получает +12% к шансу и +25% к добыче.",
-    "work_boost": "Мышиный энергетик: следующая /work приносит +20% рыбов.",
-    "hunt_safety": "Лапомазь: следующая /hunt получает +10% к шансу и не теряет мышь при провале.",
+    "grow_focus": "Валерьянка: следующая попытка роста получает +10% к шансу и +10% XP.",
+    "meow_luck": "Кошачья мята: следующий мяу-поход получает +12% к шансу и +25% к добыче.",
+    "work_boost": "Мышиный энергетик: следующая работа приносит +20% рыбов.",
+    "hunt_safety": "Лапомазь: следующая охота получает +10% к шансу и не теряет мышь при провале.",
 }
 
 RECIPES = {
@@ -92,6 +92,7 @@ for slot, tiers in EQUIPMENT_BLUEPRINTS.items():
 
 ITEMS_BY_NAME = {recipe["name"]: recipe for recipe in RECIPES.values()}
 ITEM_IDS_BY_NAME = {recipe["name"]: recipe_id for recipe_id, recipe in RECIPES.items()}
+ITEM_IDS_BY_NORMALIZED_NAME = {recipe["name"].lower(): recipe_id for recipe_id, recipe in RECIPES.items()}
 
 CRAFT_CATEGORIES = {
     "consumables": [
@@ -128,11 +129,25 @@ CATEGORY_TITLES = {
 def get_recipe(recipe_id: str | None):
     if not recipe_id:
         return None
-    return RECIPES.get(recipe_id.lower())
+    lookup = recipe_id.strip().lower()
+    return RECIPES.get(lookup) or ITEMS_BY_NAME.get(recipe_id.strip())
+
+
+def get_recipe_id(recipe_name_or_id: str | None) -> str | None:
+    if not recipe_name_or_id:
+        return None
+    lookup = recipe_name_or_id.strip().lower()
+    if lookup in RECIPES:
+        return lookup
+    return ITEM_IDS_BY_NORMALIZED_NAME.get(lookup)
 
 
 def get_item(item_name: str | None):
-    return ITEMS_BY_NAME.get(item_name or "")
+    if not item_name:
+        return None
+    return ITEMS_BY_NAME.get(item_name) or ITEMS_BY_NAME.get(item_name.strip()) or RECIPES.get(
+        ITEM_IDS_BY_NORMALIZED_NAME.get(item_name.strip().lower(), "")
+    )
 
 
 def get_item_recipe_id(item_name: str | None) -> str | None:
@@ -184,7 +199,7 @@ def format_cost(cost: dict[str, int]) -> str:
 
 def format_recipe_line(recipe_id: str, recipe: dict) -> str:
     return (
-        f"<code>{recipe_id}</code> — <b>{recipe['name']}</b>\n"
+        f"<b>{recipe['name']}</b>\n"
         f"  {recipe['description']}; цена: {format_cost(recipe['cost'])}"
     )
 

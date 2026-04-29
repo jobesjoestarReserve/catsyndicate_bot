@@ -80,11 +80,11 @@ async def cmd_bite(message: types.Message):
     attacker_id = message.from_user.id
     attacker = await db.get_user(attacker_id)
     if not attacker:
-        return await message.answer("Сначала /start")
+        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
     await touch_current_user(message, attacker)
 
     if not message.reply_to_message or not message.reply_to_message.from_user:
-        return await message.answer("Кусать надо ответом на сообщение: reply → <code>/bite</code>", parse_mode="HTML")
+        return await message.answer("Кусать надо ответом на сообщение: reply → <code>укусить</code>", parse_mode="HTML")
 
     target_telegram_user = message.reply_to_message.from_user
     target_id = target_telegram_user.id
@@ -95,7 +95,7 @@ async def cmd_bite(message: types.Message):
 
     target = await db.get_user(target_id)
     if not target:
-        return await message.answer("Жертва не числится в Синдикате. Пусть сначала напишет /start.")
+        return await message.answer("Жертва не числится в Синдикате. Пусть сначала напишет <code>старт</code>.", parse_mode="HTML")
 
     now = datetime.now()
     target_is_active = await db.is_user_recently_seen(
