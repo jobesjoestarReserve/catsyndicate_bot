@@ -26,6 +26,7 @@ from services.events import (
     spawn_chat_event,
 )
 from services.crafting import get_equipment_bonus
+from services.daily import DAILY_ACTION_EVENT, record_daily_action
 from services.game_utils import get_active_cooldown_text, require_current_user
 from services.text_aliases import BOSS_ALIASES, EVENT_ALIASES, GRAB_ALIASES, is_alias
 
@@ -98,6 +99,7 @@ async def cmd_bite_boss(message: types.Message):
 
     if runtime_state.cooldowns_enabled:
         await db.set_cooldown(user_id, BITE_BOSS_COMMAND, now + timedelta(seconds=BITE_BOSS_COOLDOWN_SECONDS))
+    await record_daily_action(user_id, DAILY_ACTION_EVENT)
 
     updated_event = result["event"]
     if updated_event["hp_current"] <= 0:
@@ -160,6 +162,7 @@ async def cmd_grab(message: types.Message):
 
     if runtime_state.cooldowns_enabled:
         await db.set_cooldown(user_id, GRAB_COMMAND, now + timedelta(seconds=GRAB_COOLDOWN_SECONDS))
+    await record_daily_action(user_id, DAILY_ACTION_EVENT)
 
     loot = []
     if result["fish"]:

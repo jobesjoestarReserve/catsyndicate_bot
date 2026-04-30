@@ -13,11 +13,13 @@ from handlers.common import router as common_router
 from handlers.combat import router as combat_router
 from handlers.crafting import router as crafting_router
 from handlers.events import router as events_router
+from handlers.daily import router as daily_router
 from handlers.mice import router as mice_router
 from handlers.progression import router as progression_router
 from handlers.profile import router as profile_router
 from handlers.inventory import router as inv_router
 from handlers.admin import router as admin_router
+from handlers.shop import router as shop_router
 from services.activity import ChatActivityMiddleware
 from services.events import autospawn_loop
 from services.mouse_jobs import mouse_job_loop
@@ -45,10 +47,12 @@ async def main():
     dp.include_router(combat_router)
     dp.include_router(crafting_router)
     dp.include_router(events_router)
+    dp.include_router(daily_router)
     dp.include_router(mice_router)
     dp.include_router(progression_router)
     dp.include_router(profile_router)
     dp.include_router(inv_router)
+    dp.include_router(shop_router)
     dp.include_router(admin_router)
 
     print("--- СИНДИКАТ ЗАПУЩЕН И БАЗА ГОТОВА ---")

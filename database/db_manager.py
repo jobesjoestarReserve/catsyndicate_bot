@@ -180,6 +180,28 @@ class DBManager:
                 """
             )
             await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS daily_quests (
+                    user_id bigint NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    quest_date date NOT NULL,
+                    difficulty text NOT NULL,
+                    streak_day integer NOT NULL,
+                    streak_saves_remaining integer NOT NULL DEFAULT 3,
+                    saved_missed_days integer NOT NULL DEFAULT 0,
+                    save_text text NOT NULL DEFAULT '',
+                    tasks jsonb NOT NULL,
+                    reward jsonb NOT NULL,
+                    claimed boolean NOT NULL DEFAULT false,
+                    created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    claimed_at timestamp without time zone,
+                    PRIMARY KEY (user_id, quest_date)
+                )
+                """
+            )
+            await conn.execute("ALTER TABLE daily_quests ADD COLUMN IF NOT EXISTS streak_saves_remaining integer NOT NULL DEFAULT 3")
+            await conn.execute("ALTER TABLE daily_quests ADD COLUMN IF NOT EXISTS saved_missed_days integer NOT NULL DEFAULT 0")
+            await conn.execute("ALTER TABLE daily_quests ADD COLUMN IF NOT EXISTS save_text text NOT NULL DEFAULT ''")
+            await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_chat_events_active ON chat_events(chat_id, status, ends_at)"
             )
             await conn.execute(
@@ -193,6 +215,9 @@ class DBManager:
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_mouse_jobs_due ON mouse_jobs(status, complete_at)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_daily_quests_claimed ON daily_quests(user_id, claimed, quest_date)"
             )
 
     async def get_user(self, user_id):
@@ -478,9 +503,17 @@ class DBManager:
                 user_id,
             )
 
-    async def craft_inventory_item(self, user_id, cost, item_name, item_type, create_amount=1):
+    async def craft_inventory_item(self, user_id, cost, item_name, item_type, create_amount=1, fish_cost=0):
         async with self.pool.acquire() as conn:
             async with conn.transaction():
+                if fish_cost > 0:
+                    balance = await conn.fetchval(
+                        "SELECT COALESCE(balance, 0) FROM users WHERE user_id = $1 FOR UPDATE",
+                        user_id,
+                    )
+                    if balance is None or balance < fish_cost:
+                        return {"ok": False, "missing": "fish", "needed": fish_cost, "available": balance or 0}
+
                 for resource_name, needed in cost.items():
                     if needed <= 0:
                         continue
@@ -528,6 +561,13 @@ class DBManager:
                     "DELETE FROM inventory WHERE user_id = $1 AND item_type = 'resource' AND bonus_value <= 0",
                     user_id,
                 )
+
+                if fish_cost > 0:
+                    await conn.execute(
+                        "UPDATE users SET balance = balance - $1 WHERE user_id = $2",
+                        fish_cost,
+                        user_id,
+                    )
 
                 if create_amount <= 0:
                     amount = 0
@@ -577,6 +617,34 @@ class DBManager:
                         )
 
                 return {"ok": True, "amount": amount}
+
+    async def buy_inventory_item(self, user_id, item_name, item_type, fish_cost, amount=1):
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                balance = await conn.fetchval(
+                    "SELECT COALESCE(balance, 0) FROM users WHERE user_id = $1 FOR UPDATE",
+                    user_id,
+                )
+                if balance is None or balance < fish_cost:
+                    return {"ok": False, "needed": fish_cost, "available": balance or 0}
+
+                await conn.execute(
+                    "UPDATE users SET balance = balance - $1 WHERE user_id = $2",
+                    fish_cost,
+                    user_id,
+                )
+                item_amount = await self._add_inventory_amount(
+                    conn,
+                    user_id,
+                    item_name,
+                    item_type,
+                    amount,
+                )
+                return {
+                    "ok": True,
+                    "amount": item_amount,
+                    "balance": balance - fish_cost,
+                }
 
     async def equip_item(self, user_id, item_name, slot_item_names):
         async with self.pool.acquire() as conn:
@@ -664,6 +732,145 @@ class DBManager:
                 """,
                 user_id, command, available_at
             )
+
+    def _decode_daily_row(self, row):
+        if not row:
+            return None
+        data = dict(row)
+        for key in ("tasks", "reward"):
+            if isinstance(data[key], str):
+                data[key] = json.loads(data[key])
+        return data
+
+    async def get_daily_quest(self, user_id, quest_date):
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM daily_quests WHERE user_id = $1 AND quest_date = $2",
+                user_id,
+                quest_date,
+            )
+            return self._decode_daily_row(row)
+
+    async def get_latest_claimed_daily_quest(self, user_id, before_date):
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT *
+                FROM daily_quests
+                WHERE user_id = $1 AND quest_date < $2 AND claimed = true
+                ORDER BY quest_date DESC
+                LIMIT 1
+                """,
+                user_id,
+                before_date,
+            )
+            return self._decode_daily_row(row)
+
+    async def create_daily_quest(
+        self,
+        user_id,
+        quest_date,
+        difficulty,
+        streak_day,
+        streak_saves_remaining,
+        saved_missed_days,
+        save_text,
+        tasks,
+        reward,
+    ):
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO daily_quests (
+                    user_id,
+                    quest_date,
+                    difficulty,
+                    streak_day,
+                    streak_saves_remaining,
+                    saved_missed_days,
+                    save_text,
+                    tasks,
+                    reward
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb)
+                ON CONFLICT (user_id, quest_date)
+                DO UPDATE SET user_id = daily_quests.user_id
+                RETURNING *
+                """,
+                user_id,
+                quest_date,
+                difficulty,
+                streak_day,
+                streak_saves_remaining,
+                saved_missed_days,
+                save_text,
+                json.dumps(tasks, ensure_ascii=False),
+                json.dumps(reward, ensure_ascii=False),
+            )
+            return self._decode_daily_row(row)
+
+    async def update_daily_quest_tasks(self, user_id, quest_date, tasks):
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE daily_quests
+                SET tasks = $3::jsonb
+                WHERE user_id = $1 AND quest_date = $2
+                RETURNING *
+                """,
+                user_id,
+                quest_date,
+                json.dumps(tasks, ensure_ascii=False),
+            )
+            return self._decode_daily_row(row)
+
+    async def claim_daily_quest(self, user_id, quest_date):
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    """
+                    SELECT *
+                    FROM daily_quests
+                    WHERE user_id = $1 AND quest_date = $2
+                    FOR UPDATE
+                    """,
+                    user_id,
+                    quest_date,
+                )
+                state = self._decode_daily_row(row)
+                if not state or state["claimed"]:
+                    return None
+                if not all(task["current"] >= task["goal"] for task in state["tasks"]):
+                    return {"ok": False, "state": state}
+
+                reward = state["reward"]
+                fish = reward.get("fish", 0)
+                if fish:
+                    await conn.execute(
+                        "UPDATE users SET balance = GREATEST(COALESCE(balance, 0) + $1, 0) WHERE user_id = $2",
+                        fish,
+                        user_id,
+                    )
+                for item in reward.get("items", []):
+                    await self._add_inventory_amount(
+                        conn,
+                        user_id,
+                        item["item_name"],
+                        item["item_type"],
+                        item["amount"],
+                    )
+
+                claimed = await conn.fetchrow(
+                    """
+                    UPDATE daily_quests
+                    SET claimed = true, claimed_at = CURRENT_TIMESTAMP
+                    WHERE user_id = $1 AND quest_date = $2
+                    RETURNING *
+                    """,
+                    user_id,
+                    quest_date,
+                )
+                return {"ok": True, "state": self._decode_daily_row(claimed)}
 
     async def register_user(self, user_id, name):
         async with self.pool.acquire() as conn:

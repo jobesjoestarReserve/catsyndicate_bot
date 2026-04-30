@@ -14,6 +14,7 @@ from data.texts import (
     BITE_WIN_TEXTS,
 )
 from services.crafting import get_equipment_bonus
+from services.daily import DAILY_ACTION_BITE, record_daily_action
 from services.game_utils import (
     get_active_cooldown_text,
     get_life_stage,
@@ -149,6 +150,7 @@ async def cmd_bite(message: types.Message):
         )
         if runtime_state.cooldowns_enabled:
             await db.set_cooldown(attacker_id, BITE_COMMAND, now + timedelta(seconds=get_bite_cooldown(attacker)))
+        await record_daily_action(attacker_id, DAILY_ACTION_BITE)
 
         loot_text = (
             f"Потери жертвы: <b>{mice_lost}</b> 🐭"

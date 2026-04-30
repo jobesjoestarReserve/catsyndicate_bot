@@ -13,6 +13,8 @@ flowchart TD
     MW --> HP["handlers/profile.py<br/>/profile"]
     MW --> HI["handlers/inventory.py<br/>/inv"]
     MW --> HCRAFT["handlers/crafting.py<br/>/craft /equip /gear /use"]
+    MW --> HSHOP["handlers/shop.py<br/>/shop /buy"]
+    MW --> HDAILY["handlers/daily.py<br/>/daily"]
     MW --> HM["handlers/mice.py<br/>/work /send_mice mine"]
     MW --> HCOMBAT["handlers/combat.py<br/>/bite /top"]
     MW --> HE["handlers/events.py<br/>/bite_boss /grab /event<br/>/spawn_event /events /end_event /events_auto"]
@@ -26,13 +28,19 @@ flowchart TD
     HE --> GU
     HPROG --> GU
     HCRAFT --> GU
+    HSHOP --> GU
+    HDAILY --> GU
     HC --> UI["services/ui.py<br/>reply keyboard / inline keyboards"]
     HI --> UI
     HCRAFT --> UI
+    HSHOP --> UI
+    HDAILY --> UI
     HC --> ALIAS["services/text_aliases.py<br/>human text aliases"]
     HP --> ALIAS
     HI --> ALIAS
     HCRAFT --> ALIAS
+    HSHOP --> ALIAS
+    HDAILY --> ALIAS
     HM --> ALIAS
     HCOMBAT --> ALIAS
     HE --> ALIAS
@@ -40,7 +48,9 @@ flowchart TD
 
     HPROG --> SP["services/progression.py<br/>XP thresholds / cost / grow chance"]
     HE --> SE["services/events.py<br/>event config / autospawn / boss rewards"]
-    HCRAFT --> SC["services/crafting.py<br/>recipes / forge outcomes<br/>gear slots / weapons / consumables"]
+    HCRAFT --> SC["services/crafting.py<br/>recipes / forge outcomes<br/>gear slots / weapons / shop items"]
+    HSHOP --> SC
+    HDAILY --> SD["services/daily.py<br/>daily tasks / streak saves / rewards"]
 
     HC --> TXT["data/texts.py<br/>reply pools"]
     HM --> TXT
@@ -81,6 +91,7 @@ flowchart TD
     DB --> CHAT["chat_activity<br/>chat activity + autospawn gate"]
     DB --> EVENTS["chat_events<br/>boss variants / fish_drop / resource_drop"]
     DB --> PARTS["event_participants<br/>damage / grabs"]
+    DB --> DAILY["daily_quests<br/>tasks / streak saves / claimed rewards"]
 ```
 
 ## Игровые Потоки
@@ -94,7 +105,8 @@ flowchart LR
     MINE --> RES["шерсть / металл / мусор"]
     RES --> CRAFT["/craft"]
     CRAFT --> GEAR["/equip /gear"]
-    CRAFT --> BUFFS["/use расходники"]
+    FISH --> SHOP["/shop /buy расходники"]
+    SHOP --> BUFFS["/use расходники"]
     GEAR --> POWER
     BUFFS --> GROW
     BUFFS --> HUNT
@@ -155,6 +167,8 @@ flowchart TD
 | Профиль | `handlers/profile.py` |
 | Инвентарь | `handlers/inventory.py` |
 | Кузница и экипировка | `handlers/crafting.py` |
+| Магазин расходников | `handlers/shop.py` |
+| Ежедневные задания | `handlers/daily.py`, `services/daily.py` |
 | Работа и подвал | `handlers/mice.py` |
 | PvP | `handlers/combat.py` |
 | События | `handlers/events.py` |

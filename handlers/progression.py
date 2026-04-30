@@ -10,6 +10,7 @@ from data.texts import GROW_TEXTS
 from database.db_manager import db
 from services.game_utils import get_active_cooldown_text, get_life_stage, require_current_user
 from services.crafting import get_equipment_bonus
+from services.daily import DAILY_ACTION_GROW, record_daily_action
 from services.text_aliases import GROW_ALIASES, is_alias
 from services.progression import (
     GROW_COMMAND,
@@ -110,6 +111,7 @@ async def cmd_grow(message: types.Message):
 
     if runtime_state.cooldowns_enabled:
         await db.set_cooldown(user_id, GROW_COMMAND, now + timedelta(seconds=get_grow_cooldown(user)))
+    await record_daily_action(user_id, DAILY_ACTION_GROW)
 
     required = get_life_xp_required(new_life_stage)
     percent = get_progress_percent(new_life_stage, new_life_xp)

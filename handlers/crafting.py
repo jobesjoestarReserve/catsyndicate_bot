@@ -13,7 +13,7 @@ from services.crafting import (
     format_cost,
     format_recipe_category,
     get_forging_cost,
-    get_forging_create_amount,
+    get_forging_create_amount_for_recipe,
     get_category_recipe_ids,
     get_consumable_effect,
     get_equipment_class,
@@ -25,6 +25,7 @@ from services.crafting import (
     get_upgraded_equipment_recipe_id,
     roll_forging_outcome,
 )
+from services.daily import DAILY_ACTION_CRAFT, record_daily_action
 from services.game_utils import require_callback_user, require_current_user
 from services.text_aliases import (
     CRAFT_ALIASES,
@@ -52,6 +53,11 @@ def get_named_arg(message: types.Message, prefixes: set[str]) -> str | None:
 
 
 def format_missing_resource(name: str, needed: int, available: int) -> str:
+    if name == "fish":
+        return (
+            "Кузнец уважает искусство, но работает за рыбов.\n"
+            f"Нужно: <b>{needed}</b> 🐟, есть: <b>{available}</b> 🐟."
+        )
     label = RESOURCE_LABELS.get(name, name)
     return (
         f"Не хватает ресурса: <b>{label}</b>.\n"
@@ -62,7 +68,7 @@ def format_missing_resource(name: str, needed: int, available: int) -> str:
 def format_craft_home() -> str:
     return (
         "🛠 <b>Кузница Синдиката</b>\n\n"
-        "Выбери раздел. Рецепты собираются кнопками, без ручного ввода id."
+        "Выбери раздел. Здесь куют экипировку и оружие за ресурсы плюс небольшую оплату рыбами."
     )
 
 
@@ -90,6 +96,8 @@ async def craft_recipe_for_user(user_id: int, recipe_id: str) -> tuple[str, bool
     recipe = get_recipe(recipe_id)
     if not recipe:
         return "Такого рецепта нет. Вернись в кузницу и выбери кнопку.", False
+    if recipe["type"] != "equipment":
+        return "Расходники теперь продаются в лавке. Открой <code>магазин</code>.", False
 
     outcome = roll_forging_outcome()
     forged_recipe = recipe
@@ -100,16 +108,18 @@ async def craft_recipe_for_user(user_id: int, recipe_id: str) -> tuple[str, bool
             forged_recipe = get_recipe(upgraded_equipment_recipe_id)
 
     cost = get_forging_cost(recipe, outcome)
-    create_amount = 1 if upgraded_equipment_recipe_id else get_forging_create_amount(outcome)
+    create_amount = get_forging_create_amount_for_recipe(recipe, outcome)
     result = await db.craft_inventory_item(
         user_id=user_id,
         cost=cost,
         item_name=forged_recipe["name"],
         item_type=forged_recipe["type"],
         create_amount=create_amount,
+        fish_cost=recipe.get("fish_cost", 0),
     )
     if not result["ok"]:
         return format_missing_resource(result["missing"], result["needed"], result["available"]), False
+    await record_daily_action(user_id, DAILY_ACTION_CRAFT)
 
     amount_text = ""
     if upgraded_equipment_recipe_id:
@@ -127,12 +137,14 @@ async def craft_recipe_for_user(user_id: int, recipe_id: str) -> tuple[str, bool
         "failure": "⚠️ <b>Ковка провалилась.</b>",
         "critical_failure": "💥 <b>Критический провал ковки!</b>",
     }
-    cost_text = "Ресурсы сохранены" if not cost else format_cost(cost)
+    resource_cost_text = "ресурсы сохранены" if not cost else format_cost(cost)
+    fish_cost = recipe.get("fish_cost", 0)
+    fish_cost_text = f", работа кузнеца: {fish_cost} 🐟" if fish_cost else ""
     return (
         f"{outcome_titles[outcome]}\n"
         f"{random.choice(CRAFT_OUTCOME_TEXTS[outcome])}\n\n"
         f"Рецепт: <b>{escape(recipe['name'])}</b>\n"
-        f"Цена: {cost_text}"
+        f"Цена: {resource_cost_text}{fish_cost_text}"
         f"{amount_text}"
     ), True
 

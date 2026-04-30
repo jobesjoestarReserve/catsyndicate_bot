@@ -8,7 +8,8 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="🐟 Мяу"), KeyboardButton(text="🐭 Охота")],
             [KeyboardButton(text="🎒 Инвентарь"), KeyboardButton(text="🛠 Кузница")],
-            [KeyboardButton(text="🧥 Экипировка"), KeyboardButton(text="📊 Досье")],
+            [KeyboardButton(text="🏪 Магазин"), KeyboardButton(text="🧥 Экипировка")],
+            [KeyboardButton(text="📅 Ежедневки"), KeyboardButton(text="📊 Досье")],
         ],
         resize_keyboard=True,
         input_field_placeholder="Выбери действие Синдиката",
@@ -18,7 +19,6 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
 def craft_home_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🧪 Расходники", callback_data="craft_cat:consumables")],
             [
                 InlineKeyboardButton(text="🪖 Шлемы", callback_data="craft_cat:helmet"),
                 InlineKeyboardButton(text="🧥 Нагрудники", callback_data="craft_cat:chest"),
@@ -28,7 +28,10 @@ def craft_home_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="🥾 Ботинки", callback_data="craft_cat:boots"),
             ],
             [InlineKeyboardButton(text="🗡 Оружие классов", callback_data="craft_cat:weapon")],
-            [InlineKeyboardButton(text="🎒 Инвентарь", callback_data="open:inv")],
+            [
+                InlineKeyboardButton(text="🏪 Магазин", callback_data="shop_home"),
+                InlineKeyboardButton(text="🎒 Инвентарь", callback_data="open:inv"),
+            ],
         ]
     )
 
@@ -65,6 +68,7 @@ def inventory_keyboard(consumables=None, equipment=None) -> InlineKeyboardMarkup
     rows.append(
         [
             InlineKeyboardButton(text="🛠 Кузница", callback_data="craft_home"),
+            InlineKeyboardButton(text="🏪 Магазин", callback_data="shop_home"),
             InlineKeyboardButton(text="🧥 Экипировка", callback_data="open:gear"),
         ]
     )
@@ -82,3 +86,25 @@ def gear_keyboard() -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+
+def shop_keyboard(item_ids: list[str]) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=f"Купить: {get_recipe(recipe_id)['name']}", callback_data=f"shop_buy:{recipe_id}")]
+        for recipe_id in item_ids
+    ]
+    rows.append(
+        [
+            InlineKeyboardButton(text="🎒 Инвентарь", callback_data="open:inv"),
+            InlineKeyboardButton(text="🛠 Кузница", callback_data="craft_home"),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def daily_keyboard(can_claim: bool) -> InlineKeyboardMarkup:
+    rows = []
+    if can_claim:
+        rows.append([InlineKeyboardButton(text="🎁 Забрать награду", callback_data="daily_claim")])
+    rows.append([InlineKeyboardButton(text="🔄 Обновить", callback_data="daily_home")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)

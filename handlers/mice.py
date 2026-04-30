@@ -8,6 +8,7 @@ from database.db_manager import db
 from data.runtime_state import runtime_state
 from data.texts import MINE_CRITICAL_SUCCESS_TEXTS, WORK_CLASS_LABELS, WORK_CLASS_PROFILES
 from services.crafting import get_equipment_bonus
+from services.daily import DAILY_ACTION_MINE, DAILY_ACTION_WORK, record_daily_action
 from services.game_utils import get_active_cooldown_text, get_life_stage, require_current_user
 from services.mouse_jobs import complete_due_mouse_jobs, format_job_duration
 from services.text_aliases import (
@@ -382,6 +383,7 @@ async def cmd_work(message: types.Message):
 
     if runtime_state.cooldowns_enabled:
         await db.set_cooldown(user_id, WORK_COMMAND, complete_at)
+    await record_daily_action(user_id, DAILY_ACTION_WORK)
 
     await message.answer(
         (
@@ -461,6 +463,7 @@ async def cmd_send_mice(message: types.Message):
 
     if runtime_state.cooldowns_enabled:
         await db.set_cooldown(user_id, SEND_MICE_COMMAND, complete_at)
+    await record_daily_action(user_id, DAILY_ACTION_MINE)
 
     await message.answer(
         (

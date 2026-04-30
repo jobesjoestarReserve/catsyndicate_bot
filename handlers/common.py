@@ -27,6 +27,7 @@ from services.game_utils import (
     touch_current_user,
 )
 from services.crafting import get_equipment_bonus
+from services.daily import DAILY_ACTION_HUNT, DAILY_ACTION_MEOW, record_daily_action
 from services.progression import get_grow_cost, get_life_xp_required, get_progress_percent
 from services.text_aliases import HELP_ALIASES, HUNT_ALIASES, MEOW_ALIASES, RESET_ALIASES, START_ALIASES, STATS_ALIASES, is_alias
 from services.ui import main_menu_keyboard
@@ -134,8 +135,9 @@ def format_help_text() -> str:
         "• <code>завершить подвал</code> — проверить готовый подвал\n\n"
         "<b>Кузница</b>\n"
         "• <code>инвентарь</code> — рыбов, мыши, ресурсы и предметы\n"
-        "• <code>кузница</code> — собрать расходники и броню\n"
-        "• <code>экипировка</code> — посмотреть надетую броню\n"
+        "• <code>кузница</code> — ковать броню и оружие за ресурсы и рыбов\n"
+        "• <code>магазин</code> — купить расходники за рыбов\n"
+        "• <code>экипировка</code> — посмотреть надетую броню и оружие\n"
         "• <code>надеть Шлем из фольги</code> — надеть предмет\n"
         "• <code>использовать Валерьянка</code> — применить расходник\n\n"
         "<b>Рост и драки</b>\n"
@@ -323,6 +325,7 @@ async def cmd_meow(message: types.Message):
             image_id = variant["image"]
 
         await db.update_balance(user_id, fish_caught)
+        await record_daily_action(user_id, DAILY_ACTION_MEOW)
         await answer_with_optional_photo(
             message,
             image_id,
@@ -406,6 +409,7 @@ async def cmd_hunt(message: types.Message):
             image_id = None
 
         await db.update_mice_count(user_id, reward)
+        await record_daily_action(user_id, DAILY_ACTION_HUNT)
         text = (
             f"{intro}\n\n"
             f"✅ Добыча: <b>{reward}</b> 🐭\n"

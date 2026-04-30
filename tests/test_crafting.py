@@ -5,16 +5,20 @@ from services.crafting import (
     CRAFT_OUTCOME_TEXTS,
     RECIPES,
     format_cost,
+    format_recipe_price,
     format_recipe_line,
+    get_category_recipe_ids,
     get_equipment_class,
     get_consumable_effect,
     get_equipment_bonus,
     get_equipment_slot,
     get_forging_cost,
     get_forging_create_amount,
+    get_forging_create_amount_for_recipe,
     get_item_recipe_id,
     get_recipe,
     get_recipe_id,
+    get_shop_item_ids,
     get_slot_item_names,
     get_upgraded_equipment_recipe_id,
     get_upgraded_weapon_recipe_id,
@@ -96,12 +100,27 @@ class CraftingTests(unittest.TestCase):
         self.assertFalse(can_equip_for_class({"cat_class": "support"}, "Отмычка рыбного налога"))
         self.assertTrue(can_equip_for_class({"cat_class": "support"}, "Шлем из фольги"))
 
-    def test_recipe_costs_are_non_empty(self):
+    def test_equipment_recipe_prices_include_resources_and_fish(self):
         for recipe_id, recipe in RECIPES.items():
             with self.subTest(recipe_id=recipe_id):
-                self.assertTrue(recipe["cost"])
-                self.assertTrue(format_cost(recipe["cost"]))
                 self.assertIs(get_recipe(recipe_id), recipe)
+                if recipe["type"] == "equipment":
+                    self.assertTrue(recipe["cost"])
+                    self.assertGreater(recipe["fish_cost"], 0)
+                    self.assertTrue(format_cost(recipe["cost"]))
+                    self.assertIn("🐟", format_recipe_price(recipe))
+
+    def test_consumables_are_shop_items_not_craft_categories(self):
+        shop_ids = get_shop_item_ids()
+
+        self.assertEqual(set(shop_ids), {"valerian", "catnip", "mouse_energy", "paw_ointment"})
+        self.assertEqual(get_category_recipe_ids("consumables"), [])
+        for recipe_id in shop_ids:
+            with self.subTest(recipe_id=recipe_id):
+                recipe = RECIPES[recipe_id]
+                self.assertEqual(recipe["type"], "consumable")
+                self.assertEqual(recipe["cost"], {})
+                self.assertGreater(recipe["fish_cost"], 0)
 
     def test_recipe_lines_show_localized_names_not_internal_ids(self):
         line = format_recipe_line("valerian", RECIPES["valerian"])
@@ -121,6 +140,8 @@ class CraftingTests(unittest.TestCase):
 
         self.assertEqual(get_forging_cost(recipe, "critical_success"), {"trash": 0, "wool": 0})
         self.assertEqual(get_forging_create_amount("critical_success"), 2)
+        self.assertEqual(get_forging_create_amount_for_recipe(recipe, "critical_success"), 1)
+        self.assertEqual(get_forging_create_amount_for_recipe(RECIPES["valerian"], "critical_success"), 2)
         self.assertEqual(get_forging_cost(recipe, "success"), recipe["cost"])
         self.assertEqual(get_forging_create_amount("failure"), 0)
         self.assertEqual(get_forging_cost(recipe, "critical_failure"), {"trash": 16, "wool": 4})

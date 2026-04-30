@@ -103,28 +103,32 @@ RECIPES = {
     "valerian": {
         "name": "Валерьянка",
         "type": "consumable",
-        "cost": {"wool": 2, "trash": 1},
+        "cost": {},
+        "fish_cost": 45,
         "effect": "grow_focus",
         "description": "бафф на следующую попытку роста",
     },
     "catnip": {
         "name": "Кошачья мята",
         "type": "consumable",
-        "cost": {"wool": 3, "trash": 2},
+        "cost": {},
+        "fish_cost": 40,
         "effect": "meow_luck",
         "description": "бафф на следующую кражу рыбов",
     },
     "mouse_energy": {
         "name": "Мышиный энергетик",
         "type": "consumable",
-        "cost": {"metal": 1, "trash": 4},
+        "cost": {},
+        "fish_cost": 55,
         "effect": "work_boost",
         "description": "бафф на следующую мышиную работу",
     },
     "paw_ointment": {
         "name": "Лапомазь",
         "type": "consumable",
-        "cost": {"wool": 2, "metal": 1},
+        "cost": {},
+        "fish_cost": 50,
         "effect": "hunt_safety",
         "description": "бафф на следующую охоту",
     },
@@ -182,6 +186,18 @@ TIER_LABELS = {
     "rare": "редкое",
 }
 
+ARMOR_FISH_COST_BY_TIER = {
+    "poor": 15,
+    "common": 40,
+    "rare": 85,
+}
+
+WEAPON_FISH_COST_BY_TIER = {
+    "poor": 25,
+    "common": 60,
+    "rare": 110,
+}
+
 for slot, tiers in EQUIPMENT_BLUEPRINTS.items():
     for tier, (name, cost, effects) in tiers.items():
         RECIPES[f"{tier}_{slot}"] = {
@@ -190,6 +206,7 @@ for slot, tiers in EQUIPMENT_BLUEPRINTS.items():
             "slot": slot,
             "tier": tier,
             "cost": cost,
+            "fish_cost": ARMOR_FISH_COST_BY_TIER[tier],
             "effects": effects,
             "description": f"{TIER_LABELS[tier]} снаряжение: {SLOT_LABELS[slot]}",
         }
@@ -203,6 +220,7 @@ for cat_class, tiers in WEAPON_BLUEPRINTS.items():
             "class": cat_class,
             "tier": tier,
             "cost": cost,
+            "fish_cost": WEAPON_FISH_COST_BY_TIER[tier],
             "effects": effects,
             "description": description,
         }
@@ -212,10 +230,6 @@ ITEM_IDS_BY_NAME = {recipe["name"]: recipe_id for recipe_id, recipe in RECIPES.i
 ITEM_IDS_BY_NORMALIZED_NAME = {recipe["name"].lower(): recipe_id for recipe_id, recipe in RECIPES.items()}
 
 CRAFT_CATEGORIES = {
-    "consumables": [
-        recipe_id for recipe_id, recipe in RECIPES.items()
-        if recipe["type"] == "consumable"
-    ],
     "helmet": [
         recipe_id for recipe_id, recipe in RECIPES.items()
         if recipe["type"] == "equipment" and recipe.get("slot") == "helmet"
@@ -239,13 +253,17 @@ CRAFT_CATEGORIES = {
 }
 
 CATEGORY_TITLES = {
-    "consumables": "🧪 Расходники",
     "helmet": "🪖 Шлемы",
     "chest": "🧥 Нагрудники",
     "bracers": "🧤 Нарукавники",
     "boots": "🥾 Ботинки",
     "weapon": "🗡 Оружие классов",
 }
+
+SHOP_ITEM_IDS = [
+    recipe_id for recipe_id, recipe in RECIPES.items()
+    if recipe["type"] == "consumable"
+]
 
 
 def roll_forging_outcome(roll: int | None = None) -> str:
@@ -265,6 +283,13 @@ def get_forging_cost(recipe: dict, outcome: str) -> dict[str, int]:
 
 def get_forging_create_amount(outcome: str) -> int:
     return CRAFT_OUTCOME_CONFIG[outcome]["create_amount"]
+
+
+def get_forging_create_amount_for_recipe(recipe: dict, outcome: str) -> int:
+    amount = get_forging_create_amount(outcome)
+    if recipe["type"] == "equipment" and amount > 0:
+        return 1
+    return amount
 
 
 def get_upgraded_equipment_recipe_id(recipe_id: str | None) -> str | None:
@@ -366,34 +391,43 @@ def get_equipment_bonus(equipped_items, bonus_name: str) -> int:
 
 
 def format_cost(cost: dict[str, int]) -> str:
+    if not cost:
+        return "без ресурсов"
     return ", ".join(
         f"{RESOURCE_LABELS.get(name, name)} {amount}"
         for name, amount in cost.items()
     )
 
 
+def format_recipe_price(recipe: dict) -> str:
+    parts = []
+    if recipe.get("cost"):
+        parts.append(format_cost(recipe["cost"]))
+    fish_cost = recipe.get("fish_cost", 0)
+    if fish_cost:
+        parts.append(f"{fish_cost} 🐟")
+    return ", ".join(parts) if parts else "бесплатно"
+
+
+def get_shop_item_ids() -> list[str]:
+    return SHOP_ITEM_IDS[:]
+
+
 def format_recipe_line(recipe_id: str, recipe: dict) -> str:
     return (
         f"<b>{recipe['name']}</b>\n"
-        f"  {recipe['description']}; цена: {format_cost(recipe['cost'])}"
+        f"  {recipe['description']}; цена: {format_recipe_price(recipe)}"
     )
 
 
 def format_recipe_list() -> str:
-    consumables = [
-        format_recipe_line(recipe_id, recipe)
-        for recipe_id, recipe in RECIPES.items()
-        if recipe["type"] == "consumable"
-    ]
     equipment = [
         format_recipe_line(recipe_id, recipe)
         for recipe_id, recipe in RECIPES.items()
         if recipe["type"] == "equipment"
     ]
     return (
-        "🧪 <b>Расходники</b>\n"
-        + "\n".join(consumables)
-        + "\n\n🛠 <b>Экипировка</b>\n"
+        "🛠 <b>Экипировка</b>\n"
         + "\n".join(equipment)
     )
 

@@ -4,7 +4,9 @@ from services.text_aliases import (
     MINE_ALIASES,
     MINE_RETURN_ALIASES,
     PROFILE_ALIASES,
+    DAILY_ALIASES,
     RESET_ALIASES,
+    SHOP_ALIASES,
     START_ALIASES,
     EQUIP_PREFIXES,
     HELP_ALIASES,
@@ -37,6 +39,14 @@ class TextAliasTests(unittest.TestCase):
     def test_reset_alias_accepts_plain_text_reset(self):
         self.assertTrue(is_alias("сброс", RESET_ALIASES))
         self.assertTrue(is_alias("удалить профиль", RESET_ALIASES))
+
+    def test_shop_alias_accepts_plain_text_shop(self):
+        self.assertTrue(is_alias("магазин", SHOP_ALIASES))
+        self.assertTrue(is_alias("лавка", SHOP_ALIASES))
+
+    def test_daily_alias_accepts_plain_text_daily(self):
+        self.assertTrue(is_alias("ежедневки", DAILY_ALIASES))
+        self.assertTrue(is_alias("ежедневные задания", DAILY_ALIASES))
 
     def test_counted_alias_accepts_amount_suffix(self):
         self.assertTrue(is_alias_with_count("Работа 5", WORK_ALIASES))
