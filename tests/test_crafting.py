@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from services.crafting import (
     CRAFT_OUTCOME_CONFIG,
@@ -24,7 +25,7 @@ from services.crafting import (
     get_upgraded_weapon_recipe_id,
     roll_forging_outcome,
 )
-from handlers.crafting import can_equip_for_class, format_gear_view
+from handlers.crafting import can_equip_for_class, equip_item_for_user, format_gear_view, use_consumable_for_user
 
 
 class CraftingTests(unittest.TestCase):
@@ -161,6 +162,39 @@ class CraftingTests(unittest.TestCase):
         self.assertIn("шлем: <b>Шлем из фольги</b>", text)
         self.assertIn("нагрудник: пусто", text)
         self.assertNotIn("<script>", text)
+
+
+class CraftingHandlerHelperTests(unittest.IsolatedAsyncioTestCase):
+    async def test_equip_item_for_user_equips_known_class_item(self):
+        user = {"cat_class": "thief"}
+
+        with patch("handlers.crafting.db.equip_item", new=AsyncMock(return_value=True)) as equip_item:
+            text, ok, alert = await equip_item_for_user(user_id=7, user=user, item_name="Отмычка рыбного налога")
+
+        self.assertTrue(ok)
+        self.assertEqual(alert, "Надето")
+        self.assertIn("Надето: <b>Отмычка рыбного налога</b>", text)
+        self.assertIn("Слот: <b>оружие</b>", text)
+        equip_item.assert_awaited_once()
+
+    async def test_use_consumable_for_user_adds_buff_and_includes_description_when_requested(self):
+        with (
+            patch("handlers.crafting.db.consume_inventory_item", new=AsyncMock(return_value=2)) as consume_item,
+            patch("handlers.crafting.db.add_buff", new=AsyncMock()) as add_buff,
+        ):
+            text, ok, alert = await use_consumable_for_user(
+                user_id=7,
+                item_name="Валерьянка",
+                include_description=True,
+            )
+
+        self.assertTrue(ok)
+        self.assertEqual(alert, "Использовано")
+        self.assertIn("Использовано: <b>Валерьянка</b>", text)
+        self.assertIn("Осталось расходников: <b>2</b>", text)
+        self.assertIn("рост", text.lower())
+        consume_item.assert_awaited_once_with(7, "Валерьянка", "consumable")
+        add_buff.assert_awaited_once_with(7, "grow_focus", uses=1)
 
 
 if __name__ == "__main__":

@@ -92,6 +92,48 @@ def can_equip_for_class(user, item_name: str) -> bool:
     return item_class is None or (user["cat_class"] or "none") == item_class
 
 
+async def equip_item_for_user(user_id: int, user, item_name: str) -> tuple[str, bool, str]:
+    slot = get_equipment_slot(item_name)
+    if not slot:
+        return "Это не экипировка из кузницы. Проверь название в инвентаре или кузнице.", False, "Это не экипировка"
+    if not can_equip_for_class(user, item_name):
+        return "Это оружие другого класса. Кузница уважает специализацию и немного бюрократию.", False, "Это оружие другого класса"
+
+    equipped = await db.equip_item(user_id, item_name, get_slot_item_names(slot))
+    if not equipped:
+        return "Такого предмета нет в инвентаре или он уже надет.", False, "Предмета нет в инвентаре"
+
+    return (
+        f"🧷 Надето: <b>{escape(item_name)}</b>\nСлот: <b>{SLOT_LABELS[slot]}</b>",
+        True,
+        "Надето",
+    )
+
+
+async def use_consumable_for_user(user_id: int, item_name: str, include_description: bool = False) -> tuple[str, bool, str]:
+    effect = get_consumable_effect(item_name)
+    if not effect:
+        return "Это не расходник из кузницы. Проверь название в инвентаре или кузнице.", False, "Это не расходник"
+
+    remaining = await db.consume_inventory_item(user_id, item_name, "consumable")
+    if remaining is None:
+        return "Такого расходника нет в инвентаре.", False, "Расходника нет в инвентаре"
+
+    await db.add_buff(user_id, effect, uses=1)
+    item = get_item(item_name)
+    description = f"\n\n{escape(item['description'])}" if include_description and item else ""
+    return (
+        (
+            f"🧪 Использовано: <b>{escape(item_name)}</b>\n"
+            f"{BUFF_LABELS[effect]}\n"
+            f"Осталось расходников: <b>{remaining}</b>"
+            f"{description}"
+        ),
+        True,
+        "Использовано",
+    )
+
+
 async def craft_recipe_for_user(user_id: int, recipe_id: str) -> tuple[str, bool]:
     recipe = get_recipe(recipe_id)
     if not recipe:
@@ -218,22 +260,10 @@ async def cb_equip_item(callback: types.CallbackQuery):
         await callback.answer("Это не экипировка", show_alert=True)
         return
 
-    item_name = recipe["name"]
-    if not can_equip_for_class(user, item_name):
-        await callback.answer("Это оружие другого класса", show_alert=True)
-        return
-    slot = get_equipment_slot(item_name)
-    equipped = await db.equip_item(user_id, item_name, get_slot_item_names(slot))
-    if not equipped:
-        await callback.answer("Предмета нет в инвентаре", show_alert=True)
-        return
-
-    await callback.answer("Надето")
-    await callback.message.answer(
-        f"🧷 Надето: <b>{escape(item_name)}</b>\nСлот: <b>{SLOT_LABELS[slot]}</b>",
-        parse_mode="HTML",
-        reply_markup=gear_keyboard(),
-    )
+    text, ok, alert = await equip_item_for_user(user_id, user, recipe["name"])
+    await callback.answer(alert, show_alert=not ok)
+    if ok:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=gear_keyboard())
 
 
 @router.callback_query(F.data.startswith("use_item:"))
@@ -249,23 +279,10 @@ async def cb_use_item(callback: types.CallbackQuery):
         await callback.answer("Это не расходник", show_alert=True)
         return
 
-    item_name = recipe["name"]
-    effect = recipe["effect"]
-    remaining = await db.consume_inventory_item(user_id, item_name, "consumable")
-    if remaining is None:
-        await callback.answer("Расходника нет в инвентаре", show_alert=True)
-        return
-
-    await db.add_buff(user_id, effect, uses=1)
-    await callback.answer("Использовано")
-    await callback.message.answer(
-        (
-            f"🧪 Использовано: <b>{escape(item_name)}</b>\n"
-            f"{BUFF_LABELS[effect]}\n"
-            f"Осталось расходников: <b>{remaining}</b>"
-        ),
-        parse_mode="HTML",
-    )
+    text, ok, alert = await use_consumable_for_user(user_id, recipe["name"])
+    await callback.answer(alert, show_alert=not ok)
+    if ok:
+        await callback.message.answer(text, parse_mode="HTML")
 
 
 @router.message(lambda message: parse_prefixed_arg(message.text, EQUIP_PREFIXES) is not None)
@@ -286,20 +303,8 @@ async def cmd_equip(message: types.Message):
     recipe_id = get_recipe_id(item_name)
     recipe = get_recipe(recipe_id) if recipe_id else None
     item_name = recipe["name"] if recipe else item_name
-    slot = get_equipment_slot(item_name)
-    if not slot:
-        return await message.answer("Это не экипировка из кузницы. Проверь название в инвентаре или кузнице.")
-    if not can_equip_for_class(user, item_name):
-        return await message.answer("Это оружие другого класса. Кузница уважает специализацию и немного бюрократию.")
-
-    equipped = await db.equip_item(user_id, item_name, get_slot_item_names(slot))
-    if not equipped:
-        return await message.answer("Такого предмета нет в инвентаре или он уже надет.")
-
-    await message.answer(
-        f"🧷 Надето: <b>{escape(item_name)}</b>\nСлот: <b>{SLOT_LABELS[slot]}</b>",
-        parse_mode="HTML",
-    )
+    text, _, _ = await equip_item_for_user(user_id, user, item_name)
+    await message.answer(text, parse_mode="HTML")
 
 
 @router.message(F.text == "🧥 Экипировка")
@@ -353,22 +358,5 @@ async def cmd_use(message: types.Message):
     recipe_id = get_recipe_id(item_name)
     recipe = get_recipe(recipe_id) if recipe_id else None
     item_name = recipe["name"] if recipe else item_name
-    effect = get_consumable_effect(item_name)
-    if not effect:
-        return await message.answer("Это не расходник из кузницы. Проверь название в инвентаре или кузнице.")
-
-    remaining = await db.consume_inventory_item(user_id, item_name, "consumable")
-    if remaining is None:
-        return await message.answer("Такого расходника нет в инвентаре.")
-
-    await db.add_buff(user_id, effect, uses=1)
-    item = get_item(item_name)
-    await message.answer(
-        (
-            f"🧪 Использовано: <b>{escape(item_name)}</b>\n"
-            f"{BUFF_LABELS[effect]}\n"
-            f"Осталось расходников: <b>{remaining}</b>"
-            + (f"\n\n{escape(item['description'])}" if item else "")
-        ),
-        parse_mode="HTML",
-    )
+    text, _, _ = await use_consumable_for_user(user_id, item_name, include_description=True)
+    await message.answer(text, parse_mode="HTML")
