@@ -367,8 +367,7 @@ class DBManager:
         if row:
             current_amount = row["bonus_value"] or 0
             if max_amount is not None:
-                amount = min(amount, max_amount - current_amount)
-                if amount <= 0:
+                if current_amount + amount > max_amount:
                     return None
             return await conn.fetchval(
                 "UPDATE inventory SET bonus_value = COALESCE(bonus_value, 0) + $1 WHERE id = $2 RETURNING bonus_value",
@@ -376,8 +375,7 @@ class DBManager:
                 row["id"],
             )
         if max_amount is not None:
-            amount = min(amount, max_amount)
-            if amount <= 0:
+            if amount > max_amount:
                 return None
         return await conn.fetchval(
             """
@@ -1177,6 +1175,21 @@ class DBManager:
                         "amount": amount,
                     }
 
+                item_amount = await self._add_inventory_amount(
+                    conn,
+                    user_id,
+                    item_name,
+                    item_type,
+                    amount,
+                    max_amount=max_amount,
+                )
+                if item_amount is None:
+                    return {
+                        "ok": False,
+                        "stack_full": True,
+                        "amount": max_amount,
+                        "max_amount": max_amount,
+                    }
                 await conn.execute(
                     "UPDATE users SET balance = balance - $1 WHERE user_id = $2",
                     total_cost,
@@ -1193,21 +1206,6 @@ class DBManager:
                     recipe_id,
                     amount,
                 )
-                item_amount = await self._add_inventory_amount(
-                    conn,
-                    user_id,
-                    item_name,
-                    item_type,
-                    amount,
-                    max_amount=max_amount,
-                )
-                if item_amount is None:
-                    return {
-                        "ok": False,
-                        "stack_full": True,
-                        "amount": max_amount,
-                        "max_amount": max_amount,
-                    }
                 await self.log_shop_transaction(
                     conn,
                     user_id,
