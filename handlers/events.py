@@ -87,7 +87,11 @@ async def cmd_bite_boss(message: types.Message):
         )
 
     equipped = await db.get_equipped_items(user_id)
-    damage = roll_boss_damage(user) + get_equipment_bonus(equipped, "damage_guard")
+    damage = (
+        roll_boss_damage(user)
+        + get_equipment_bonus(equipped, "damage_guard")
+        + get_equipment_bonus(equipped, "boss_damage")
+    )
     result = await db.add_boss_damage(event["id"], user_id, damage)
     if not result:
         return await message.answer("🐾 Босс уже ушёл или спрятался за юридической формулировкой.")

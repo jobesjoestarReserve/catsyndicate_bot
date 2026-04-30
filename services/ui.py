@@ -27,6 +27,7 @@ def craft_home_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="🧤 Нарукавники", callback_data="craft_cat:bracers"),
                 InlineKeyboardButton(text="🥾 Ботинки", callback_data="craft_cat:boots"),
             ],
+            [InlineKeyboardButton(text="🗡 Оружие классов", callback_data="craft_cat:weapon")],
             [InlineKeyboardButton(text="🎒 Инвентарь", callback_data="open:inv")],
         ]
     )

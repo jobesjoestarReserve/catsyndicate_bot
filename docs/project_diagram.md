@@ -40,7 +40,7 @@ flowchart TD
 
     HPROG --> SP["services/progression.py<br/>XP thresholds / cost / grow chance"]
     HE --> SE["services/events.py<br/>event config / autospawn / boss rewards"]
-    HCRAFT --> SC["services/crafting.py<br/>recipes / gear slots / consumables"]
+    HCRAFT --> SC["services/crafting.py<br/>recipes / forge outcomes<br/>gear slots / weapons / consumables"]
 
     HC --> TXT["data/texts.py<br/>reply pools"]
     HM --> TXT
@@ -147,7 +147,7 @@ flowchart TD
 | Утилиты игрока, user/callback guards и cooldown guards | `services/game_utils.py` |
 | Клавиатуры Telegram | `services/ui.py` |
 | Текстовые алиасы | `services/text_aliases.py` |
-| Рецепты и бонусы кузницы | `services/crafting.py` |
+| Рецепты, исходы ковки и бонусы кузницы | `services/crafting.py` |
 | Логика роста | `services/progression.py` |
 | Логика событий | `services/events.py` |
 | Учёт активности чата | `services/activity.py` |

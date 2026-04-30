@@ -1,3 +1,4 @@
+import random
 from html import escape
 
 from aiogram import F, Router, types
@@ -6,17 +7,23 @@ from aiogram.filters import Command
 from database.db_manager import db
 from services.crafting import (
     BUFF_LABELS,
+    CRAFT_OUTCOME_TEXTS,
     RESOURCE_LABELS,
     SLOT_LABELS,
     format_cost,
     format_recipe_category,
+    get_forging_cost,
+    get_forging_create_amount,
     get_category_recipe_ids,
     get_consumable_effect,
+    get_equipment_class,
     get_equipment_slot,
     get_item,
     get_recipe,
     get_recipe_id,
     get_slot_item_names,
+    get_upgraded_equipment_recipe_id,
+    roll_forging_outcome,
 )
 from services.game_utils import require_callback_user, require_current_user
 from services.text_aliases import (
@@ -74,26 +81,58 @@ def format_gear_view(equipped) -> str:
     return "🧥 <b>Экипировка</b>\n\n" + "\n".join(lines)
 
 
+def can_equip_for_class(user, item_name: str) -> bool:
+    item_class = get_equipment_class(item_name)
+    return item_class is None or (user["cat_class"] or "none") == item_class
+
+
 async def craft_recipe_for_user(user_id: int, recipe_id: str) -> tuple[str, bool]:
     recipe = get_recipe(recipe_id)
     if not recipe:
         return "Такого рецепта нет. Вернись в кузницу и выбери кнопку.", False
 
+    outcome = roll_forging_outcome()
+    forged_recipe = recipe
+    upgraded_equipment_recipe_id = None
+    if outcome == "critical_success":
+        upgraded_equipment_recipe_id = get_upgraded_equipment_recipe_id(recipe_id)
+        if upgraded_equipment_recipe_id:
+            forged_recipe = get_recipe(upgraded_equipment_recipe_id)
+
+    cost = get_forging_cost(recipe, outcome)
+    create_amount = 1 if upgraded_equipment_recipe_id else get_forging_create_amount(outcome)
     result = await db.craft_inventory_item(
         user_id=user_id,
-        cost=recipe["cost"],
-        item_name=recipe["name"],
-        item_type=recipe["type"],
+        cost=cost,
+        item_name=forged_recipe["name"],
+        item_type=forged_recipe["type"],
+        create_amount=create_amount,
     )
     if not result["ok"]:
         return format_missing_resource(result["missing"], result["needed"], result["available"]), False
 
     amount_text = ""
-    if recipe["type"] == "consumable":
+    if upgraded_equipment_recipe_id:
+        amount_text = f"\nКачество выросло: <b>{escape(forged_recipe['name'])}</b>."
+    elif create_amount > 1:
+        amount_text = f"\nБонус ковки: <b>+{create_amount}</b> шт. вместо 1."
+    elif recipe["type"] == "consumable" and create_amount > 0:
         amount_text = f"\nВ запасе: <b>{result['amount']}</b> шт."
+    elif create_amount <= 0:
+        amount_text = "\nПредмет не создан."
+
+    outcome_titles = {
+        "critical_success": "🌟 <b>Критический успех ковки!</b>",
+        "success": "✅ <b>Ковка удалась.</b>",
+        "failure": "⚠️ <b>Ковка провалилась.</b>",
+        "critical_failure": "💥 <b>Критический провал ковки!</b>",
+    }
+    cost_text = "Ресурсы сохранены" if not cost else format_cost(cost)
     return (
-        f"✅ <b>Собрано:</b> {escape(recipe['name'])}\n"
-        f"Цена: {format_cost(recipe['cost'])}"
+        f"{outcome_titles[outcome]}\n"
+        f"{random.choice(CRAFT_OUTCOME_TEXTS[outcome])}\n\n"
+        f"Рецепт: <b>{escape(recipe['name'])}</b>\n"
+        f"Цена: {cost_text}"
         f"{amount_text}"
     ), True
 
@@ -150,7 +189,7 @@ async def cb_craft_make(callback: types.CallbackQuery):
         return
     recipe_id = callback.data.split(":", 1)[1]
     text, ok = await craft_recipe_for_user(user_id, recipe_id)
-    await callback.answer("Собрано" if ok else "Не хватает ресурсов", show_alert=not ok)
+    await callback.answer("Кузница отработала" if ok else "Не хватает ресурсов", show_alert=not ok)
     await callback.message.answer(text, parse_mode="HTML", reply_markup=craft_home_keyboard())
 
 
@@ -168,6 +207,9 @@ async def cb_equip_item(callback: types.CallbackQuery):
         return
 
     item_name = recipe["name"]
+    if not can_equip_for_class(user, item_name):
+        await callback.answer("Это оружие другого класса", show_alert=True)
+        return
     slot = get_equipment_slot(item_name)
     equipped = await db.equip_item(user_id, item_name, get_slot_item_names(slot))
     if not equipped:
@@ -235,6 +277,8 @@ async def cmd_equip(message: types.Message):
     slot = get_equipment_slot(item_name)
     if not slot:
         return await message.answer("Это не экипировка из кузницы. Проверь название в инвентаре или кузнице.")
+    if not can_equip_for_class(user, item_name):
+        return await message.answer("Это оружие другого класса. Кузница уважает специализацию и немного бюрократию.")
 
     equipped = await db.equip_item(user_id, item_name, get_slot_item_names(slot))
     if not equipped:

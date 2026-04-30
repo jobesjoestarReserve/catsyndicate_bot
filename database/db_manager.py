@@ -478,10 +478,12 @@ class DBManager:
                 user_id,
             )
 
-    async def craft_inventory_item(self, user_id, cost, item_name, item_type):
+    async def craft_inventory_item(self, user_id, cost, item_name, item_type, create_amount=1):
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 for resource_name, needed in cost.items():
+                    if needed <= 0:
+                        continue
                     rows = await conn.fetch(
                         """
                         SELECT id, bonus_value
@@ -497,6 +499,8 @@ class DBManager:
                         return {"ok": False, "missing": resource_name, "needed": needed, "available": available}
 
                 for resource_name, needed in cost.items():
+                    if needed <= 0:
+                        continue
                     remaining = needed
                     rows = await conn.fetch(
                         """
@@ -525,16 +529,20 @@ class DBManager:
                     user_id,
                 )
 
-                if item_type == "equipment":
-                    amount = await conn.fetchval(
-                        """
-                        INSERT INTO inventory (user_id, item_name, item_type, bonus_value, is_equipped)
-                        VALUES ($1, $2, 'equipment', 1, false)
-                        RETURNING bonus_value
-                        """,
-                        user_id,
-                        item_name,
-                    )
+                if create_amount <= 0:
+                    amount = 0
+                elif item_type == "equipment":
+                    amount = 0
+                    for _ in range(create_amount):
+                        amount = await conn.fetchval(
+                            """
+                            INSERT INTO inventory (user_id, item_name, item_type, bonus_value, is_equipped)
+                            VALUES ($1, $2, 'equipment', 1, false)
+                            RETURNING bonus_value
+                            """,
+                            user_id,
+                            item_name,
+                        )
                 else:
                     row = await conn.fetchrow(
                         """
@@ -551,19 +559,21 @@ class DBManager:
                     )
                     if row:
                         amount = await conn.fetchval(
-                            "UPDATE inventory SET bonus_value = bonus_value + 1 WHERE id = $1 RETURNING bonus_value",
+                            "UPDATE inventory SET bonus_value = bonus_value + $1 WHERE id = $2 RETURNING bonus_value",
+                            create_amount,
                             row["id"],
                         )
                     else:
                         amount = await conn.fetchval(
                             """
                             INSERT INTO inventory (user_id, item_name, item_type, bonus_value, is_equipped)
-                            VALUES ($1, $2, $3, 1, false)
+                            VALUES ($1, $2, $3, $4, false)
                             RETURNING bonus_value
                             """,
                             user_id,
                             item_name,
                             item_type,
+                            create_amount,
                         )
 
                 return {"ok": True, "amount": amount}

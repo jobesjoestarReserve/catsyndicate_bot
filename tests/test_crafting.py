@@ -1,18 +1,26 @@
 import unittest
 
 from services.crafting import (
+    CRAFT_OUTCOME_CONFIG,
+    CRAFT_OUTCOME_TEXTS,
     RECIPES,
     format_cost,
     format_recipe_line,
+    get_equipment_class,
     get_consumable_effect,
     get_equipment_bonus,
     get_equipment_slot,
+    get_forging_cost,
+    get_forging_create_amount,
     get_item_recipe_id,
     get_recipe,
     get_recipe_id,
     get_slot_item_names,
+    get_upgraded_equipment_recipe_id,
+    get_upgraded_weapon_recipe_id,
+    roll_forging_outcome,
 )
-from handlers.crafting import format_gear_view
+from handlers.crafting import can_equip_for_class, format_gear_view
 
 
 class CraftingTests(unittest.TestCase):
@@ -27,10 +35,12 @@ class CraftingTests(unittest.TestCase):
         self.assertEqual(get_equipment_slot("Жилет из плотной шерсти"), "chest")
         self.assertEqual(get_equipment_slot("Металлические нарукавники"), "bracers")
         self.assertEqual(get_equipment_slot("Сапоги бесшумного тыгыдыка"), "boots")
+        self.assertEqual(get_equipment_slot("Тихий коготь ночной смены"), "weapon")
 
     def test_item_names_map_back_to_recipe_ids(self):
         self.assertEqual(get_item_recipe_id("Валерьянка"), "valerian")
         self.assertEqual(get_item_recipe_id("Шлем из фольги"), "poor_helmet")
+        self.assertEqual(get_item_recipe_id("Отмычка рыбного налога"), "common_weapon_thief")
 
     def test_recipe_lookup_accepts_case_and_extra_spaces(self):
         self.assertEqual(get_recipe_id("  шлем из фольги  "), "poor_helmet")
@@ -41,6 +51,16 @@ class CraftingTests(unittest.TestCase):
             with self.subTest(slot=slot):
                 self.assertEqual(len(get_slot_item_names(slot)), 3)
 
+    def test_weapon_slot_has_three_tiers_per_class(self):
+        weapon_names = get_slot_item_names("weapon")
+
+        self.assertEqual(len(weapon_names), 12)
+        self.assertEqual(get_equipment_class("Сковородный щитолом"), "warrior")
+        self.assertEqual(get_equipment_class("Отмычка рыбного налога"), "thief")
+        self.assertEqual(get_equipment_class("Лазерная указка наставника"), "support")
+        self.assertEqual(get_equipment_class("Тихий коготь ночной смены"), "assassin")
+        self.assertIn("Коготь абсолютной тишины", weapon_names)
+
     def test_equipment_bonus_sums_known_items(self):
         equipped = [
             {"item_name": "Металлические нарукавники"},
@@ -49,6 +69,32 @@ class CraftingTests(unittest.TestCase):
 
         self.assertEqual(get_equipment_bonus(equipped, "loot_bonus"), 2)
         self.assertEqual(get_equipment_bonus(equipped, "hunt_chance"), 3)
+
+    def test_class_weapon_effects_are_active(self):
+        equipped = [
+            {"item_name": "Тихий коготь ночной смены"},
+            {"item_name": "Сковородный щитолом"},
+        ]
+
+        self.assertEqual(get_equipment_bonus(equipped, "bite_power"), 2)
+        self.assertEqual(get_equipment_bonus(equipped, "boss_damage"), 3)
+        self.assertEqual(get_equipment_bonus(equipped, "damage_guard"), 2)
+
+    def test_equipment_critical_success_upgrades_quality_instead_of_duplicate(self):
+        self.assertEqual(get_upgraded_equipment_recipe_id("poor_helmet"), "common_helmet")
+        self.assertEqual(get_upgraded_equipment_recipe_id("common_boots"), "rare_boots")
+        self.assertIsNone(get_upgraded_equipment_recipe_id("rare_chest"))
+        self.assertIsNone(get_upgraded_equipment_recipe_id("valerian"))
+
+        self.assertEqual(get_upgraded_weapon_recipe_id("poor_weapon_thief"), "common_weapon_thief")
+        self.assertEqual(get_upgraded_weapon_recipe_id("common_weapon_thief"), "rare_weapon_thief")
+        self.assertIsNone(get_upgraded_weapon_recipe_id("rare_weapon_thief"))
+        self.assertIsNone(get_upgraded_weapon_recipe_id("poor_helmet"))
+
+    def test_class_weapon_equip_guard_matches_user_class(self):
+        self.assertTrue(can_equip_for_class({"cat_class": "thief"}, "Отмычка рыбного налога"))
+        self.assertFalse(can_equip_for_class({"cat_class": "support"}, "Отмычка рыбного налога"))
+        self.assertTrue(can_equip_for_class({"cat_class": "support"}, "Шлем из фольги"))
 
     def test_recipe_costs_are_non_empty(self):
         for recipe_id, recipe in RECIPES.items():
@@ -62,6 +108,27 @@ class CraftingTests(unittest.TestCase):
 
         self.assertIn("Валерьянка", line)
         self.assertNotIn("valerian", line)
+
+    def test_forging_outcome_distribution_keeps_90_10_base_split(self):
+        self.assertEqual(sum(config["weight"] for config in CRAFT_OUTCOME_CONFIG.values()), 100)
+        self.assertEqual(roll_forging_outcome(1), "critical_success")
+        self.assertEqual(roll_forging_outcome(6), "success")
+        self.assertEqual(roll_forging_outcome(91), "failure")
+        self.assertEqual(roll_forging_outcome(96), "critical_failure")
+
+    def test_forging_outcome_costs_and_amounts(self):
+        recipe = RECIPES["poor_helmet"]
+
+        self.assertEqual(get_forging_cost(recipe, "critical_success"), {"trash": 0, "wool": 0})
+        self.assertEqual(get_forging_create_amount("critical_success"), 2)
+        self.assertEqual(get_forging_cost(recipe, "success"), recipe["cost"])
+        self.assertEqual(get_forging_create_amount("failure"), 0)
+        self.assertEqual(get_forging_cost(recipe, "critical_failure"), {"trash": 16, "wool": 4})
+
+    def test_forging_outcomes_have_15_thematic_lines_each(self):
+        for outcome, lines in CRAFT_OUTCOME_TEXTS.items():
+            with self.subTest(outcome=outcome):
+                self.assertEqual(len(lines), 15)
 
     def test_gear_view_escapes_item_names_and_lists_empty_slots(self):
         text = format_gear_view([

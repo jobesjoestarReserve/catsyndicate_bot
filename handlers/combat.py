@@ -124,6 +124,8 @@ async def cmd_bite(message: types.Message):
 
     if success:
         power = get_bite_power(attacker)
+        attacker_equipped = await db.get_equipped_items(attacker_id)
+        power += get_equipment_bonus(attacker_equipped, "bite_power")
         target_equipped = await db.get_equipped_items(target_id)
         target_guard = get_equipment_bonus(target_equipped, "damage_guard")
         target_mice = target["mice_count"] or 0
