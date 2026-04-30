@@ -186,6 +186,12 @@ TIER_LABELS = {
     "rare": "редкое",
 }
 
+EQUIPMENT_DURABILITY_BY_TIER = {
+    "poor": 30,
+    "common": 40,
+    "rare": 50,
+}
+
 ARMOR_FISH_COST_BY_TIER = {
     "poor": 15,
     "common": 40,
@@ -317,6 +323,39 @@ def get_upgraded_weapon_recipe_id(recipe_id: str | None) -> str | None:
     if recipe and recipe.get("slot") == "weapon":
         return upgraded_recipe_id
     return None
+
+
+def get_equipment_durability_max(recipe_id: str | None) -> int | None:
+    recipe = get_recipe(recipe_id)
+    if not recipe or recipe.get("type") != "equipment":
+        return None
+    return EQUIPMENT_DURABILITY_BY_TIER.get(recipe.get("tier"))
+
+
+def get_equipment_family_names(recipe_id: str | None) -> list[str]:
+    recipe = get_recipe(recipe_id)
+    if not recipe or recipe.get("type") != "equipment":
+        return []
+
+    if recipe.get("slot") == "weapon":
+        family_recipe_ids = [
+            f"{tier}_weapon_{recipe['class']}"
+            for tier in ("poor", "common", "rare")
+        ]
+    else:
+        family_recipe_ids = [
+            f"{tier}_{recipe['slot']}"
+            for tier in ("poor", "common", "rare")
+        ]
+    return [RECIPES[family_recipe_id]["name"] for family_recipe_id in family_recipe_ids]
+
+
+def format_durability(row) -> str:
+    current = row.get("durability_current") if row else None
+    maximum = row.get("durability_max") if row else None
+    if current is None or maximum is None:
+        return ""
+    return f" [{current}/{maximum}]"
 
 
 def get_recipe(recipe_id: str | None):

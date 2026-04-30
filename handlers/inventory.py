@@ -4,7 +4,7 @@ from aiogram import F, Router, types
 from aiogram.filters import Command
 
 from database.db_manager import db
-from services.crafting import get_equipment_slot, SLOT_LABELS
+from services.crafting import format_durability, get_equipment_slot, SLOT_LABELS
 from services.game_utils import require_callback_user, require_current_user
 from services.text_aliases import INVENTORY_ALIASES, is_alias
 from services.ui import inventory_keyboard
@@ -33,7 +33,7 @@ def format_inventory_text(user, resources, consumables, equipment, equipped) -> 
         else "Расходников пока нет. Собери их в кузнице."
     )
     equipment_text = (
-        "\n".join(f"• {escape(row['item_name'])}: <b>{row['amount']}</b>" for row in equipment)
+        "\n".join(f"• {escape(row['item_name'])}{format_durability(row)}" for row in equipment)
         if equipment
         else "Свободной экипировки нет. Собери броню в кузнице."
     )
@@ -41,7 +41,7 @@ def format_inventory_text(user, resources, consumables, equipment, equipped) -> 
     for row in equipped:
         slot = get_equipment_slot(row["item_name"])
         label = SLOT_LABELS.get(slot, "слот")
-        equipped_lines.append(f"• {label}: <b>{escape(row['item_name'])}</b>")
+        equipped_lines.append(f"• {label}: <b>{escape(row['item_name'])}</b>{format_durability(row)}")
     equipped_text = "\n".join(equipped_lines) if equipped_lines else "Ничего не надето. Нажми кнопку предмета в инвентаре или напиши <code>надеть название</code>."
 
     return (

@@ -1,3 +1,4 @@
+import random
 from html import escape
 
 from aiogram import F, Router, types
@@ -18,6 +19,24 @@ from services.ui import main_menu_keyboard, shop_keyboard
 
 router = Router()
 
+SHOP_STACK_FULL_TEXTS = [
+    "Лавочник заглянул в твой рюкзак и услышал, как оттуда тихо попросили не надо.",
+    "Склад забит настолько, что новая баночка потребовала отдельную прописку.",
+    "Касса уже открылась, но инвентарь лёг поперёк двери и сказал: хватит.",
+    "Лавочник попытался впихнуть ещё одну штуку, но физика подала протест.",
+    "Товар отличный, но твой запас уже выглядит как маленькая нелегальная аптека.",
+    "Место кончилось. Даже воображаемая полка занята воображаемой коробкой.",
+    "Синдикат уважает запасы, но это уже складская драматургия.",
+    "Новая покупка посмотрела на 9999 соседей и решила не лезть в эту очередь.",
+    "Лавочник бережно закрыл витрину: ещё один предмет, и рюкзак начнёт вести переговоры.",
+    "Твой стек достиг формы абсолютного куба. Дальше только философия.",
+    "Покупка отменена: предметы внутри уже сидят друг у друга на плечах.",
+    "Лавка готова продать, но место в карманах официально ушло в отпуск.",
+    "9999 штук смотрят на тебя и молча спрашивают: зачем ещё?",
+    "Инвентарь издал звук, похожий на бухгалтерский ужас. Сделка отменена.",
+    "Лавочник не стал брать рыбов: даже жадность должна знать геометрию.",
+]
+
 
 def format_shop_home() -> str:
     lines = []
@@ -32,7 +51,7 @@ def format_shop_home() -> str:
     return "🏪 <b>Лавка расходников</b>\n\n" + "\n\n".join(lines)
 
 
-async def buy_shop_item_for_user(user_id: int, recipe_id: str) -> tuple[str, bool]:
+async def buy_shop_item_for_user(user_id: int, recipe_id: str, stack_full_text: str | None = None) -> tuple[str, bool]:
     recipe = get_recipe(recipe_id)
     if not recipe or recipe["type"] != "consumable":
         return "Такого товара в лавке нет.", False
@@ -46,6 +65,14 @@ async def buy_shop_item_for_user(user_id: int, recipe_id: str) -> tuple[str, boo
         amount=1,
     )
     if not result["ok"]:
+        if result.get("stack_full"):
+            stack_full_text = stack_full_text or random.choice(SHOP_STACK_FULL_TEXTS)
+            return (
+                f"📦 Стек полон: <b>{escape(recipe['name'])}</b>\n"
+                f"В запасе: <b>{result['amount']}/{result['max_amount']}</b> шт.\n"
+                f"{escape(stack_full_text)}",
+                False,
+            )
         return (
             "🐟 Лавочник подвёл счёты и покачал усами.\n"
             f"Нужно: <b>{result['needed']}</b> 🐟, есть: <b>{result['available']}</b> 🐟.",

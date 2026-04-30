@@ -11,11 +11,14 @@ from services.crafting import (
     RESOURCE_LABELS,
     SLOT_LABELS,
     format_cost,
+    format_durability,
     format_recipe_category,
     get_forging_cost,
     get_forging_create_amount_for_recipe,
     get_category_recipe_ids,
+    get_equipment_durability_max,
     get_consumable_effect,
+    get_equipment_family_names,
     get_equipment_class,
     get_equipment_slot,
     get_item,
@@ -77,12 +80,15 @@ def format_gear_view(equipped) -> str:
     for row in equipped:
         slot = get_equipment_slot(row["item_name"])
         if slot:
-            by_slot[slot] = row["item_name"]
+            by_slot[slot] = row
 
     lines = []
     for slot, label in SLOT_LABELS.items():
-        item_name = by_slot.get(slot)
-        lines.append(f"• {label}: <b>{escape(item_name)}</b>" if item_name else f"• {label}: пусто")
+        item = by_slot.get(slot)
+        if item:
+            lines.append(f"• {label}: <b>{escape(item['item_name'])}</b>{format_durability(item)}")
+        else:
+            lines.append(f"• {label}: пусто")
 
     return "🧥 <b>Экипировка</b>\n\n" + "\n".join(lines)
 
@@ -142,30 +148,48 @@ async def craft_recipe_for_user(user_id: int, recipe_id: str) -> tuple[str, bool
         return "Расходники теперь продаются в лавке. Открой <code>магазин</code>.", False
 
     outcome = roll_forging_outcome()
-    forged_recipe = recipe
-    upgraded_equipment_recipe_id = None
-    if outcome == "critical_success":
-        upgraded_equipment_recipe_id = get_upgraded_equipment_recipe_id(recipe_id)
-        if upgraded_equipment_recipe_id:
-            forged_recipe = get_recipe(upgraded_equipment_recipe_id)
-
     cost = get_forging_cost(recipe, outcome)
     create_amount = get_forging_create_amount_for_recipe(recipe, outcome)
     result = await db.craft_inventory_item(
         user_id=user_id,
         cost=cost,
-        item_name=forged_recipe["name"],
-        item_type=forged_recipe["type"],
+        item_name=recipe["name"],
+        item_type=recipe["type"],
         create_amount=create_amount,
         fish_cost=recipe.get("fish_cost", 0),
+        equipment_family_names=get_equipment_family_names(recipe_id),
+        target_item_name=recipe["name"],
+        target_durability_max=get_equipment_durability_max(recipe_id),
     )
     if not result["ok"]:
+        if result.get("already_full"):
+            return (
+                f"<b>{escape(result['item_name'])}</b> уже целый: "
+                f"{format_durability(result)}. Кузница не стала брать ресурсы за лишний ремонт.",
+                False,
+            )
+        if result.get("already_owned"):
+            return (
+                f"В этой линейке уже есть <b>{escape(result['item_name'])}</b>. "
+                "Куй текущий предмет для ремонта или следующий тир для апгрейда.",
+                False,
+            )
+        if result.get("needs_previous"):
+            return (
+                f"Сначала нужен <b>{escape(result['item_name'])}</b>. "
+                "Кузница не перескакивает через ступеньки качества.",
+                False,
+            )
         return format_missing_resource(result["missing"], result["needed"], result["available"]), False
     await record_daily_action(user_id, DAILY_ACTION_CRAFT)
 
     amount_text = ""
-    if upgraded_equipment_recipe_id:
-        amount_text = f"\nКачество выросло: <b>{escape(forged_recipe['name'])}</b>."
+    if result.get("repaired"):
+        amount_text = f"\nПочинено: <b>{escape(result['item_name'])}</b>{format_durability(result)}."
+    elif result.get("upgraded"):
+        amount_text = f"\nУлучшено: <b>{escape(result['item_name'])}</b>{format_durability(result)}."
+    elif recipe["type"] == "equipment" and create_amount > 0:
+        amount_text = f"\nПрочность: <b>{format_durability(result).strip()}</b>."
     elif create_amount > 1:
         amount_text = f"\nБонус ковки: <b>+{create_amount}</b> шт. вместо 1."
     elif recipe["type"] == "consumable" and create_amount > 0:
@@ -243,7 +267,7 @@ async def cb_craft_make(callback: types.CallbackQuery):
         return
     recipe_id = callback.data.split(":", 1)[1]
     text, ok = await craft_recipe_for_user(user_id, recipe_id)
-    await callback.answer("Кузница отработала" if ok else "Не хватает ресурсов", show_alert=not ok)
+    await callback.answer("Кузница отработала" if ok else "Кузница отказалась", show_alert=not ok)
     await callback.message.answer(text, parse_mode="HTML", reply_markup=craft_home_keyboard())
 
 

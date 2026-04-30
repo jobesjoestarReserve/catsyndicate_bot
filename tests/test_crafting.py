@@ -6,6 +6,7 @@ from services.crafting import (
     CRAFT_OUTCOME_TEXTS,
     RECIPES,
     format_cost,
+    format_durability,
     format_recipe_price,
     format_recipe_line,
     get_category_recipe_ids,
@@ -19,13 +20,21 @@ from services.crafting import (
     get_item_recipe_id,
     get_recipe,
     get_recipe_id,
+    get_equipment_family_names,
     get_shop_item_ids,
     get_slot_item_names,
     get_upgraded_equipment_recipe_id,
     get_upgraded_weapon_recipe_id,
     roll_forging_outcome,
 )
-from handlers.crafting import can_equip_for_class, equip_item_for_user, format_gear_view, use_consumable_for_user
+from handlers.crafting import (
+    can_equip_for_class,
+    craft_recipe_for_user,
+    equip_item_for_user,
+    format_gear_view,
+    use_consumable_for_user,
+)
+from handlers.shop import SHOP_STACK_FULL_TEXTS, buy_shop_item_for_user
 
 
 class CraftingTests(unittest.TestCase):
@@ -85,7 +94,7 @@ class CraftingTests(unittest.TestCase):
         self.assertEqual(get_equipment_bonus(equipped, "boss_damage"), 3)
         self.assertEqual(get_equipment_bonus(equipped, "damage_guard"), 2)
 
-    def test_equipment_critical_success_upgrades_quality_instead_of_duplicate(self):
+    def test_equipment_upgrade_recipe_ids_follow_quality_ladder(self):
         self.assertEqual(get_upgraded_equipment_recipe_id("poor_helmet"), "common_helmet")
         self.assertEqual(get_upgraded_equipment_recipe_id("common_boots"), "rare_boots")
         self.assertIsNone(get_upgraded_equipment_recipe_id("rare_chest"))
@@ -95,6 +104,21 @@ class CraftingTests(unittest.TestCase):
         self.assertEqual(get_upgraded_weapon_recipe_id("common_weapon_thief"), "rare_weapon_thief")
         self.assertIsNone(get_upgraded_weapon_recipe_id("rare_weapon_thief"))
         self.assertIsNone(get_upgraded_weapon_recipe_id("poor_helmet"))
+
+    def test_format_durability_for_equipment_rows(self):
+        self.assertEqual(format_durability({"durability_current": 18, "durability_max": 30}), " [18/30]")
+        self.assertEqual(format_durability({"durability_current": None, "durability_max": None}), "")
+
+    def test_equipment_family_names_follow_slot_or_weapon_class(self):
+        self.assertEqual(
+            get_equipment_family_names("poor_helmet"),
+            ["Шлем из фольги", "Картонный шлем бригадира", "Шлем тихого авторитета"],
+        )
+        self.assertEqual(
+            get_equipment_family_names("poor_weapon_thief"),
+            ["Ржавая отмычка хвоста", "Отмычка рыбного налога", "Крючок бесследного налогообложения"],
+        )
+        self.assertEqual(get_equipment_family_names("valerian"), [])
 
     def test_class_weapon_equip_guard_matches_user_class(self):
         self.assertTrue(can_equip_for_class({"cat_class": "thief"}, "Отмычка рыбного налога"))
@@ -195,6 +219,113 @@ class CraftingHandlerHelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("рост", text.lower())
         consume_item.assert_awaited_once_with(7, "Валерьянка", "consumable")
         add_buff.assert_awaited_once_with(7, "grow_focus", uses=1)
+
+    async def test_craft_recipe_for_user_reports_equipment_repair_for_same_recipe(self):
+        db_result = {
+            "ok": True,
+            "repaired": True,
+            "item_name": "Шлем из фольги",
+            "durability_current": 30,
+            "durability_max": 30,
+        }
+
+        with (
+            patch("handlers.crafting.roll_forging_outcome", return_value="success"),
+            patch("handlers.crafting.db.craft_inventory_item", new=AsyncMock(return_value=db_result)) as craft_item,
+            patch("handlers.crafting.record_daily_action", new=AsyncMock()),
+        ):
+            text, ok = await craft_recipe_for_user(user_id=7, recipe_id="poor_helmet")
+
+        self.assertTrue(ok)
+        self.assertIn("Починено", text)
+        self.assertIn("Шлем из фольги", text)
+        self.assertIn("[30/30]", text)
+        self.assertIn("Шлем из фольги", craft_item.await_args.kwargs["equipment_family_names"])
+        self.assertEqual(craft_item.await_args.kwargs["target_item_name"], "Шлем из фольги")
+        self.assertEqual(craft_item.await_args.kwargs["target_durability_max"], 30)
+
+    async def test_craft_recipe_for_user_reports_explicit_next_tier_upgrade(self):
+        db_result = {
+            "ok": True,
+            "upgraded": True,
+            "item_name": "Картонный шлем бригадира",
+            "durability_current": 40,
+            "durability_max": 40,
+        }
+
+        with (
+            patch("handlers.crafting.roll_forging_outcome", return_value="success"),
+            patch("handlers.crafting.db.craft_inventory_item", new=AsyncMock(return_value=db_result)),
+            patch("handlers.crafting.record_daily_action", new=AsyncMock()),
+        ):
+            text, ok = await craft_recipe_for_user(user_id=7, recipe_id="common_helmet")
+
+        self.assertTrue(ok)
+        self.assertIn("Улучшено", text)
+        self.assertIn("Картонный шлем бригадира", text)
+        self.assertIn("[40/40]", text)
+
+    async def test_craft_recipe_for_user_blocks_already_better_equipment_without_spending(self):
+        db_result = {
+            "ok": False,
+            "already_owned": True,
+            "item_name": "Шлем тихого авторитета",
+        }
+
+        with (
+            patch("handlers.crafting.roll_forging_outcome", return_value="success"),
+            patch("handlers.crafting.db.craft_inventory_item", new=AsyncMock(return_value=db_result)),
+            patch("handlers.crafting.record_daily_action", new=AsyncMock()) as record_daily,
+        ):
+            text, ok = await craft_recipe_for_user(user_id=7, recipe_id="rare_helmet")
+
+        self.assertFalse(ok)
+        self.assertIn("уже есть", text)
+        record_daily.assert_not_awaited()
+
+    async def test_buy_shop_item_for_user_reports_full_consumable_stack_without_daily(self):
+        db_result = {
+            "ok": False,
+            "stack_full": True,
+            "amount": 9999,
+            "max_amount": 9999,
+        }
+
+        with (
+            patch("handlers.shop.db.buy_inventory_item", new=AsyncMock(return_value=db_result)),
+            patch("handlers.shop.record_daily_action", new=AsyncMock()) as record_daily,
+        ):
+            text, ok = await buy_shop_item_for_user(user_id=7, recipe_id="valerian")
+
+        self.assertFalse(ok)
+        self.assertIn("Стек полон", text)
+        self.assertIn("9999/9999", text)
+        record_daily.assert_not_awaited()
+
+    def test_shop_stack_full_has_15_comic_replies(self):
+        self.assertEqual(len(SHOP_STACK_FULL_TEXTS), 15)
+        self.assertEqual(len(set(SHOP_STACK_FULL_TEXTS)), 15)
+
+    async def test_buy_shop_item_for_user_can_use_selected_stack_full_reply(self):
+        db_result = {
+            "ok": False,
+            "stack_full": True,
+            "amount": 9999,
+            "max_amount": 9999,
+        }
+
+        with (
+            patch("handlers.shop.db.buy_inventory_item", new=AsyncMock(return_value=db_result)),
+            patch("handlers.shop.record_daily_action", new=AsyncMock()),
+        ):
+            text, ok = await buy_shop_item_for_user(
+                user_id=7,
+                recipe_id="valerian",
+                stack_full_text=SHOP_STACK_FULL_TEXTS[3],
+            )
+
+        self.assertFalse(ok)
+        self.assertIn(SHOP_STACK_FULL_TEXTS[3], text)
 
 
 if __name__ == "__main__":

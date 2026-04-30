@@ -57,6 +57,19 @@ class DBInventoryHelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(totals, {"wool": 3})
         self.assertEqual(list(conn.items), [(10, "wool", "resource")])
 
+    async def test_add_inventory_amount_caps_consumable_stack(self):
+        manager = DBManager()
+        conn = FakeInventoryConn()
+
+        first = await manager._add_inventory_amount(conn, 10, "Валерьянка", "consumable", 9998, max_amount=9999)
+        second = await manager._add_inventory_amount(conn, 10, "Валерьянка", "consumable", 5, max_amount=9999)
+        third = await manager._add_inventory_amount(conn, 10, "Валерьянка", "consumable", 1, max_amount=9999)
+
+        self.assertEqual(first, 9998)
+        self.assertEqual(second, 9999)
+        self.assertIsNone(third)
+        self.assertEqual(conn.items[(10, "Валерьянка", "consumable")]["bonus_value"], 9999)
+
 
 if __name__ == "__main__":
     unittest.main()

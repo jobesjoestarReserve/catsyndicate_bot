@@ -9,8 +9,8 @@ class InventoryViewTests(unittest.TestCase):
             user={"balance": 10, "mice_count": 2},
             resources=[{"item_name": "<wool>", "amount": 3}],
             consumables=[{"item_name": "<script>", "amount": 1}],
-            equipment=[{"item_name": "Шлем из фольги", "amount": 1}],
-            equipped=[{"item_name": "<b>bad</b>"}],
+            equipment=[{"item_name": "Шлем из фольги", "amount": 1, "durability_current": 18, "durability_max": 30}],
+            equipped=[{"item_name": "<b>bad</b>", "durability_current": 1, "durability_max": 2}],
         )
 
         self.assertIn("&lt;wool&gt;", text)
@@ -18,6 +18,18 @@ class InventoryViewTests(unittest.TestCase):
         self.assertIn("&lt;b&gt;bad&lt;/b&gt;", text)
         self.assertNotIn("<script>", text)
         self.assertNotIn("<b>bad</b>", text)
+
+    def test_inventory_text_lists_equipment_without_amounts(self):
+        text = format_inventory_text(
+            user={"balance": 10, "mice_count": 2},
+            resources=[],
+            consumables=[],
+            equipment=[{"item_name": "Шлем из фольги", "amount": 1, "durability_current": 18, "durability_max": 30}],
+            equipped=[],
+        )
+
+        self.assertIn("• Шлем из фольги [18/30]", text)
+        self.assertNotIn("Шлем из фольги: <b>1</b>", text)
 
 
 if __name__ == "__main__":

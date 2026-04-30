@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 STARTING_MICE_COUNT = 3
+CONSUMABLE_STACK_LIMIT = 9999
 logger = logging.getLogger(__name__)
 
 
@@ -49,6 +50,8 @@ class DBManager:
                     item_type text NOT NULL,
                     bonus_value integer NOT NULL DEFAULT 0,
                     is_equipped boolean NOT NULL DEFAULT false,
+                    durability_current integer,
+                    durability_max integer,
                     created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
@@ -127,6 +130,12 @@ class DBManager:
             )
             await conn.execute(
                 "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS is_equipped boolean DEFAULT false"
+            )
+            await conn.execute(
+                "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS durability_current integer"
+            )
+            await conn.execute(
+                "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS durability_max integer"
             )
             await conn.execute("UPDATE inventory SET bonus_value = 0 WHERE bonus_value IS NULL")
             await conn.execute("UPDATE inventory SET is_equipped = false WHERE is_equipped IS NULL")
@@ -277,7 +286,7 @@ class DBManager:
                 amount, user_id
             )
 
-    async def _add_inventory_amount(self, conn, user_id, item_name, item_type, amount):
+    async def _add_inventory_amount(self, conn, user_id, item_name, item_type, amount, max_amount=None):
         row = await conn.fetchrow(
             """
             SELECT id, bonus_value
@@ -292,11 +301,20 @@ class DBManager:
             item_type,
         )
         if row:
+            current_amount = row["bonus_value"] or 0
+            if max_amount is not None:
+                amount = min(amount, max_amount - current_amount)
+                if amount <= 0:
+                    return None
             return await conn.fetchval(
                 "UPDATE inventory SET bonus_value = COALESCE(bonus_value, 0) + $1 WHERE id = $2 RETURNING bonus_value",
                 amount,
                 row["id"],
             )
+        if max_amount is not None:
+            amount = min(amount, max_amount)
+            if amount <= 0:
+                return None
         return await conn.fetchval(
             """
             INSERT INTO inventory (user_id, item_name, item_type, bonus_value, is_equipped)
@@ -326,7 +344,15 @@ class DBManager:
     async def add_inventory_item(self, user_id, item_name, item_type, amount):
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                return await self._add_inventory_amount(conn, user_id, item_name, item_type, amount)
+                max_amount = CONSUMABLE_STACK_LIMIT if item_type == "consumable" else None
+                return await self._add_inventory_amount(
+                    conn,
+                    user_id,
+                    item_name,
+                    item_type,
+                    amount,
+                    max_amount=max_amount,
+                )
 
     async def start_mouse_job(self, user_id, chat_id, job_type, payload, complete_at, mice_sent):
         async with self.pool.acquire() as conn:
@@ -471,7 +497,12 @@ class DBManager:
             if item_type:
                 return await conn.fetch(
                     """
-                    SELECT item_name, item_type, COALESCE(SUM(bonus_value), 0) AS amount
+                    SELECT
+                        item_name,
+                        item_type,
+                        COALESCE(SUM(bonus_value), 0) AS amount,
+                        MAX(durability_current) AS durability_current,
+                        MAX(durability_max) AS durability_max
                     FROM inventory
                     WHERE user_id = $1 AND item_type = $2 AND is_equipped = false
                     GROUP BY item_name, item_type
@@ -482,7 +513,12 @@ class DBManager:
                 )
             return await conn.fetch(
                 """
-                SELECT item_name, item_type, COALESCE(SUM(bonus_value), 0) AS amount
+                SELECT
+                    item_name,
+                    item_type,
+                    COALESCE(SUM(bonus_value), 0) AS amount,
+                    MAX(durability_current) AS durability_current,
+                    MAX(durability_max) AS durability_max
                 FROM inventory
                 WHERE user_id = $1 AND is_equipped = false
                 GROUP BY item_name, item_type
@@ -495,7 +531,7 @@ class DBManager:
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 """
-                SELECT id, item_name, item_type, bonus_value
+                SELECT id, item_name, item_type, bonus_value, durability_current, durability_max
                 FROM inventory
                 WHERE user_id = $1 AND item_type = 'equipment' AND is_equipped = true
                 ORDER BY item_name
@@ -503,9 +539,68 @@ class DBManager:
                 user_id,
             )
 
-    async def craft_inventory_item(self, user_id, cost, item_name, item_type, create_amount=1, fish_cost=0):
+    async def craft_inventory_item(
+        self,
+        user_id,
+        cost,
+        item_name,
+        item_type,
+        create_amount=1,
+        fish_cost=0,
+        equipment_family_names=None,
+        target_item_name=None,
+        target_durability_max=None,
+    ):
         async with self.pool.acquire() as conn:
             async with conn.transaction():
+                equipment_action = None
+                equipment_row = None
+                equipment_family_names = equipment_family_names or []
+                if item_type == "equipment" and equipment_family_names:
+                    target_item_name = target_item_name or item_name
+                    target_index = equipment_family_names.index(target_item_name)
+                    owned_rows = await conn.fetch(
+                        """
+                        SELECT id, item_name, is_equipped, durability_current, durability_max
+                        FROM inventory
+                        WHERE user_id = $1 AND item_type = 'equipment' AND item_name = ANY($2::text[])
+                        ORDER BY id
+                        FOR UPDATE
+                        """,
+                        user_id,
+                        equipment_family_names,
+                    )
+                    if owned_rows:
+                        best_row = max(
+                            owned_rows,
+                            key=lambda row: equipment_family_names.index(row["item_name"]),
+                        )
+                        best_index = equipment_family_names.index(best_row["item_name"])
+                        if target_index == best_index:
+                            current = best_row["durability_current"]
+                            maximum = best_row["durability_max"] or target_durability_max
+                            if current is not None and maximum is not None and current >= maximum:
+                                return {
+                                    "ok": False,
+                                    "already_full": True,
+                                    "item_name": best_row["item_name"],
+                                    "durability_current": current,
+                                    "durability_max": maximum,
+                                }
+                            equipment_action = "repair"
+                            equipment_row = best_row
+                        elif target_index == best_index + 1:
+                            equipment_action = "upgrade"
+                            equipment_row = best_row
+                        elif target_index < best_index:
+                            return {"ok": False, "already_owned": True, "item_name": best_row["item_name"]}
+                        else:
+                            return {
+                                "ok": False,
+                                "needs_previous": True,
+                                "item_name": equipment_family_names[target_index - 1],
+                            }
+
                 if fish_cost > 0:
                     balance = await conn.fetchval(
                         "SELECT COALESCE(balance, 0) FROM users WHERE user_id = $1 FOR UPDATE",
@@ -569,6 +664,43 @@ class DBManager:
                         user_id,
                     )
 
+                if equipment_action == "repair":
+                    await conn.execute(
+                        "UPDATE inventory SET durability_current = $1, durability_max = $1 WHERE id = $2",
+                        target_durability_max,
+                        equipment_row["id"],
+                    )
+                    return {
+                        "ok": True,
+                        "amount": 1,
+                        "repaired": True,
+                        "item_name": equipment_row["item_name"],
+                        "durability_current": target_durability_max,
+                        "durability_max": target_durability_max,
+                        "was_equipped": equipment_row["is_equipped"],
+                    }
+
+                if equipment_action == "upgrade":
+                    await conn.execute(
+                        """
+                        UPDATE inventory
+                        SET item_name = $1, durability_current = $2, durability_max = $2
+                        WHERE id = $3
+                        """,
+                        target_item_name,
+                        target_durability_max,
+                        equipment_row["id"],
+                    )
+                    return {
+                        "ok": True,
+                        "amount": 1,
+                        "upgraded": True,
+                        "item_name": target_item_name,
+                        "durability_current": target_durability_max,
+                        "durability_max": target_durability_max,
+                        "was_equipped": equipment_row["is_equipped"],
+                    }
+
                 if create_amount <= 0:
                     amount = 0
                 elif item_type == "equipment":
@@ -576,12 +708,21 @@ class DBManager:
                     for _ in range(create_amount):
                         amount = await conn.fetchval(
                             """
-                            INSERT INTO inventory (user_id, item_name, item_type, bonus_value, is_equipped)
-                            VALUES ($1, $2, 'equipment', 1, false)
+                            INSERT INTO inventory (
+                                user_id,
+                                item_name,
+                                item_type,
+                                bonus_value,
+                                is_equipped,
+                                durability_current,
+                                durability_max
+                            )
+                            VALUES ($1, $2, 'equipment', 1, false, $3, $3)
                             RETURNING bonus_value
                             """,
                             user_id,
                             item_name,
+                            target_durability_max,
                         )
                 else:
                     row = await conn.fetchrow(
@@ -616,11 +757,38 @@ class DBManager:
                             create_amount,
                         )
 
-                return {"ok": True, "amount": amount}
+                result = {"ok": True, "amount": amount}
+                if item_type == "equipment" and create_amount > 0:
+                    result.update({
+                        "item_name": item_name,
+                        "durability_current": target_durability_max,
+                        "durability_max": target_durability_max,
+                    })
+                return result
 
     async def buy_inventory_item(self, user_id, item_name, item_type, fish_cost, amount=1):
         async with self.pool.acquire() as conn:
             async with conn.transaction():
+                max_amount = CONSUMABLE_STACK_LIMIT if item_type == "consumable" else None
+                if max_amount is not None:
+                    current_amount = await conn.fetchval(
+                        """
+                        SELECT COALESCE(SUM(bonus_value), 0)
+                        FROM inventory
+                        WHERE user_id = $1 AND item_name = $2 AND item_type = $3 AND is_equipped = false
+                        """,
+                        user_id,
+                        item_name,
+                        item_type,
+                    )
+                    if (current_amount or 0) + amount > max_amount:
+                        return {
+                            "ok": False,
+                            "stack_full": True,
+                            "amount": current_amount or 0,
+                            "max_amount": max_amount,
+                        }
+
                 balance = await conn.fetchval(
                     "SELECT COALESCE(balance, 0) FROM users WHERE user_id = $1 FOR UPDATE",
                     user_id,
@@ -639,7 +807,15 @@ class DBManager:
                     item_name,
                     item_type,
                     amount,
+                    max_amount=max_amount,
                 )
+                if item_amount is None:
+                    return {
+                        "ok": False,
+                        "stack_full": True,
+                        "amount": max_amount,
+                        "max_amount": max_amount,
+                    }
                 return {
                     "ok": True,
                     "amount": item_amount,
