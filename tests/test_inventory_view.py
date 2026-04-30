@@ -1,6 +1,7 @@
 import unittest
 
 from handlers.inventory import format_inventory_text
+from services.ui import inventory_keyboard
 
 
 class InventoryViewTests(unittest.TestCase):
@@ -19,7 +20,7 @@ class InventoryViewTests(unittest.TestCase):
         self.assertNotIn("<script>", text)
         self.assertNotIn("<b>bad</b>", text)
 
-    def test_inventory_text_lists_equipment_without_amounts(self):
+    def test_inventory_text_omits_free_equipment_items(self):
         text = format_inventory_text(
             user={"balance": 10, "mice_count": 2},
             resources=[],
@@ -28,8 +29,35 @@ class InventoryViewTests(unittest.TestCase):
             equipped=[],
         )
 
-        self.assertIn("• Шлем из фольги [18/30]", text)
+        self.assertNotIn("• Шлем из фольги [18/30]", text)
         self.assertNotIn("Шлем из фольги: <b>1</b>", text)
+        self.assertNotIn("Свободная экипировка", text)
+
+    def test_inventory_text_does_not_show_free_equipment_section(self):
+        text = format_inventory_text(
+            user={"balance": 10, "mice_count": 2},
+            resources=[],
+            consumables=[],
+            equipment=[],
+            equipped=[],
+        )
+
+        self.assertNotIn("Свободная экипировка", text)
+        self.assertNotIn("Нажми кнопку предмета в инвентаре", text)
+        self.assertIn("Открой <code>экипировка</code>", text)
+
+    def test_inventory_keyboard_omits_equip_buttons(self):
+        keyboard = inventory_keyboard([
+            {"item_name": "Мышиный энергетик", "amount": 1},
+        ])
+        callbacks = [
+            button.callback_data
+            for row in keyboard.inline_keyboard
+            for button in row
+        ]
+
+        self.assertIn("use_item:mouse_energy", callbacks)
+        self.assertNotIn("equip_item:foil_helmet", callbacks)
 
 
 if __name__ == "__main__":

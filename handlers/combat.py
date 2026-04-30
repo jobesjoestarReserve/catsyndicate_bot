@@ -15,6 +15,7 @@ from data.texts import (
 )
 from services.crafting import get_equipment_bonus
 from services.daily import DAILY_ACTION_BITE, record_daily_action
+from services.events import is_boss_event
 from services.game_utils import (
     get_active_cooldown_text,
     get_life_stage,
@@ -40,6 +41,15 @@ BITE_COOLDOWN_BY_LIFE = {
     8: 70,
     9: 60,
 }
+
+
+def should_route_bite_to_boss(text: str | None, has_reply: bool, reply_from_bot: bool, active_event_type: str | None) -> bool:
+    if not is_alias(text, BITE_ALIASES):
+        return False
+    if not active_event_type or not is_boss_event(active_event_type):
+        return False
+    return not has_reply or reply_from_bot
+
 
 def get_bite_cooldown(user) -> int:
     life_stage = get_life_stage(user)
@@ -83,6 +93,19 @@ async def cmd_bite(message: types.Message):
     attacker = await require_current_user(message)
     if not attacker:
         return
+
+    reply_from_bot = bool(message.reply_to_message and message.reply_to_message.from_user and message.reply_to_message.from_user.is_bot)
+    if not message.reply_to_message or reply_from_bot:
+        event = await db.get_active_event(message.chat.id)
+        if should_route_bite_to_boss(
+            message.text,
+            has_reply=bool(message.reply_to_message),
+            reply_from_bot=reply_from_bot,
+            active_event_type=event["event_type"] if event else None,
+        ):
+            from handlers.events import cmd_bite_boss
+
+            return await cmd_bite_boss(message)
 
     if not message.reply_to_message or not message.reply_to_message.from_user:
         return await message.answer("Кусать надо ответом на сообщение: reply → <code>укусить</code>", parse_mode="HTML")

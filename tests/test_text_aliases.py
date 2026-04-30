@@ -2,6 +2,8 @@ import unittest
 
 from services.text_aliases import (
     BITE_ALIASES,
+    BOSS_ALIASES,
+    BUY_PREFIXES,
     CRAFT_ALIASES,
     MINE_ALIASES,
     MINE_RETURN_ALIASES,
@@ -21,6 +23,7 @@ from services.text_aliases import (
     USE_ITEM_PREFIXES,
     WORK_ALIASES,
     WORK_RETURN_ALIASES,
+    WISHLIST_ALIASES,
     is_alias,
     is_alias_with_count,
     normalize_text,
@@ -52,6 +55,15 @@ class TextAliasTests(unittest.TestCase):
         self.assertTrue(is_alias("магазин", SHOP_ALIASES))
         self.assertTrue(is_alias("лавка", SHOP_ALIASES))
 
+    def test_wishlist_alias_accepts_plain_text_wishlist(self):
+        self.assertTrue(is_alias("хотелки", WISHLIST_ALIASES))
+        self.assertTrue(is_alias("список желаний", WISHLIST_ALIASES))
+
+    def test_boss_alias_accepts_boss_bite_phrases(self):
+        self.assertTrue(is_alias("кусь босса", BOSS_ALIASES))
+        self.assertTrue(is_alias("пылесос", BOSS_ALIASES))
+        self.assertTrue(is_alias("тапок", BOSS_ALIASES))
+
     def test_daily_alias_accepts_plain_text_daily(self):
         self.assertTrue(is_alias("ежедневки", DAILY_ALIASES))
         self.assertTrue(is_alias("ежедневные задания", DAILY_ALIASES))
@@ -70,6 +82,8 @@ class TextAliasTests(unittest.TestCase):
     def test_item_action_prefixes_extract_localized_names(self):
         self.assertEqual(parse_prefixed_arg("Надеть Шлем из фольги", EQUIP_PREFIXES), "шлем из фольги")
         self.assertEqual(parse_prefixed_arg("Использовать Валерьянка", USE_ITEM_PREFIXES), "валерьянка")
+        self.assertEqual(parse_prefixed_arg("Купить Валерьянка 10", BUY_PREFIXES), "валерьянка 10")
+        self.assertEqual(parse_prefixed_arg("Отсыпь кошачья мята max", BUY_PREFIXES), "кошачья мята max")
 
     def test_absurd_comic_aliases_are_recognized(self):
         cases = [

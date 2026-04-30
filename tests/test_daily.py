@@ -8,6 +8,7 @@ from services.daily import (
     are_daily_tasks_complete,
     generate_daily_reward,
     generate_daily_tasks,
+    format_daily_reward,
     get_daily_difficulty,
     get_streak_day_from_last_claim,
     get_streak_plan_from_last_claim,
@@ -80,6 +81,14 @@ class DailyQuestTests(unittest.TestCase):
         self.assertLess(easy["fish"], medium["fish"])
         self.assertLess(medium["fish"], hard["fish"])
         self.assertTrue(hard["items"])
+
+    def test_daily_reward_formats_resource_names_for_players(self):
+        text = format_daily_reward({
+            "items": [{"item_name": "trash", "item_type": "resource", "amount": 2}],
+        })
+
+        self.assertIn("мусор", text)
+        self.assertNotIn("trash", text)
 
 
 if __name__ == "__main__":

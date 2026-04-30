@@ -10,12 +10,15 @@ from services.crafting import (
     CRAFT_OUTCOME_TEXTS,
     RESOURCE_LABELS,
     SLOT_LABELS,
+    WEAPON_CLASS_LABELS,
     format_cost,
     format_durability,
     format_recipe_category,
+    format_recipe_line,
     get_forging_cost,
     get_forging_create_amount_for_recipe,
     get_category_recipe_ids,
+    get_weapon_class_recipe_ids,
     get_equipment_durability_max,
     get_consumable_effect,
     get_equipment_family_names,
@@ -38,7 +41,7 @@ from services.text_aliases import (
     is_alias,
     parse_prefixed_arg,
 )
-from services.ui import craft_home_keyboard, gear_keyboard, recipe_keyboard
+from services.ui import craft_home_keyboard, gear_keyboard, recipe_detail_keyboard, recipe_keyboard
 
 router = Router()
 
@@ -98,6 +101,24 @@ def can_equip_for_class(user, item_name: str) -> bool:
     return item_class is None or (user["cat_class"] or "none") == item_class
 
 
+def can_craft_for_class(user, recipe: dict) -> tuple[bool, str | None]:
+    recipe_class = recipe.get("class")
+    if recipe.get("slot") != "weapon" or recipe_class is None:
+        return True, None
+
+    user_class = (user or {}).get("cat_class") or "none"
+    if user_class == "none":
+        return False, "Сначала выбери класс кота. Кузница не выдаёт классовое оружие загадочной пустоте."
+    if user_class != recipe_class:
+        own_label = WEAPON_CLASS_LABELS.get(user_class, "без класса")
+        weapon_label = WEAPON_CLASS_LABELS.get(recipe_class, recipe_class)
+        return False, (
+            f"Это оружие другого класса: <b>{escape(weapon_label)}</b>.\n"
+            f"Твой класс: <b>{escape(own_label)}</b>. Кузница уважает специализацию и не продаёт чужие ложки."
+        )
+    return True, None
+
+
 async def equip_item_for_user(user_id: int, user, item_name: str) -> tuple[str, bool, str]:
     slot = get_equipment_slot(item_name)
     if not slot:
@@ -140,12 +161,15 @@ async def use_consumable_for_user(user_id: int, item_name: str, include_descript
     )
 
 
-async def craft_recipe_for_user(user_id: int, recipe_id: str) -> tuple[str, bool]:
+async def craft_recipe_for_user(user_id: int, recipe_id: str, user=None) -> tuple[str, bool]:
     recipe = get_recipe(recipe_id)
     if not recipe:
         return "Такого рецепта нет. Вернись в кузницу и выбери кнопку.", False
     if recipe["type"] != "equipment":
         return "Расходники теперь продаются в лавке. Открой <code>магазин</code>.", False
+    can_craft, denial_text = can_craft_for_class(user, recipe)
+    if not can_craft:
+        return denial_text, False
 
     outcome = roll_forging_outcome()
     cost = get_forging_cost(recipe, outcome)
@@ -233,7 +257,7 @@ async def cmd_craft(message: types.Message):
         )
 
     recipe_id = get_recipe_id(" ".join(args))
-    text, _ = await craft_recipe_for_user(user_id, recipe_id)
+    text, _ = await craft_recipe_for_user(user_id, recipe_id, user=user)
     await message.answer(text, parse_mode="HTML", reply_markup=craft_home_keyboard())
 
 
@@ -255,7 +279,35 @@ async def cb_craft_category(callback: types.CallbackQuery):
     await callback.message.edit_text(
         format_recipe_category(category),
         parse_mode="HTML",
+        reply_markup=recipe_keyboard(recipe_ids, category=category),
+    )
+
+
+@router.callback_query(F.data.startswith("craft_weapon_class:"))
+async def cb_craft_weapon_class(callback: types.CallbackQuery):
+    cat_class = callback.data.split(":", 1)[1]
+    recipe_ids = get_weapon_class_recipe_ids(cat_class)
+    title = WEAPON_CLASS_LABELS.get(cat_class, "класс")
+    text = f"🗡 <b>Оружие: {escape(title)}</b>\n\n" + "\n\n".join(
+        format_recipe_line(recipe_id, get_recipe(recipe_id))
+        for recipe_id in recipe_ids
+    )
+    await callback.answer()
+    await callback.message.edit_text(
+        text,
+        parse_mode="HTML",
         reply_markup=recipe_keyboard(recipe_ids),
+    )
+
+
+@router.callback_query(F.data.startswith("craft_recipe:"))
+async def cb_craft_recipe(callback: types.CallbackQuery):
+    recipe_id = callback.data.split(":", 1)[1]
+    await callback.answer()
+    await callback.message.edit_text(
+        format_recipe_line(recipe_id, get_recipe(recipe_id)),
+        parse_mode="HTML",
+        reply_markup=recipe_detail_keyboard(recipe_id),
     )
 
 
@@ -266,7 +318,7 @@ async def cb_craft_make(callback: types.CallbackQuery):
     if not user:
         return
     recipe_id = callback.data.split(":", 1)[1]
-    text, ok = await craft_recipe_for_user(user_id, recipe_id)
+    text, ok = await craft_recipe_for_user(user_id, recipe_id, user=user)
     await callback.answer("Кузница отработала" if ok else "Кузница отказалась", show_alert=not ok)
     await callback.message.answer(text, parse_mode="HTML", reply_markup=craft_home_keyboard())
 

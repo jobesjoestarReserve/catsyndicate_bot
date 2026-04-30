@@ -32,17 +32,12 @@ def format_inventory_text(user, resources, consumables, equipment, equipped) -> 
         if consumables
         else "Расходников пока нет. Собери их в кузнице."
     )
-    equipment_text = (
-        "\n".join(f"• {escape(row['item_name'])}{format_durability(row)}" for row in equipment)
-        if equipment
-        else "Свободной экипировки нет. Собери броню в кузнице."
-    )
     equipped_lines = []
     for row in equipped:
         slot = get_equipment_slot(row["item_name"])
         label = SLOT_LABELS.get(slot, "слот")
         equipped_lines.append(f"• {label}: <b>{escape(row['item_name'])}</b>{format_durability(row)}")
-    equipped_text = "\n".join(equipped_lines) if equipped_lines else "Ничего не надето. Нажми кнопку предмета в инвентаре или напиши <code>надеть название</code>."
+    equipped_text = "\n".join(equipped_lines) if equipped_lines else "Ничего не надето. Открой <code>экипировка</code> или собери вещь в <code>кузница</code>."
 
     return (
         "🎒 <b>Инвентарь Синдиката</b>\n\n"
@@ -53,8 +48,6 @@ def format_inventory_text(user, resources, consumables, equipment, equipped) -> 
         f"{resources_text}\n\n"
         "<b>Расходники:</b>\n"
         f"{consumables_text}\n\n"
-        "<b>Свободная экипировка:</b>\n"
-        f"{equipment_text}\n\n"
         "<b>Надето:</b>\n"
         f"{equipped_text}"
     )
@@ -66,7 +59,7 @@ async def get_inventory_view(user_id: int, user):
     equipment = await db.get_inventory_items(user_id, "equipment")
     equipped = await db.get_equipped_items(user_id)
     text = format_inventory_text(user, resources, consumables, equipment, equipped)
-    return text, inventory_keyboard(consumables, equipment)
+    return text, inventory_keyboard(consumables)
 
 
 @router.message(F.text == "🎒 Инвентарь")

@@ -266,6 +266,13 @@ CATEGORY_TITLES = {
     "weapon": "🗡 Оружие классов",
 }
 
+WEAPON_CLASS_LABELS = {
+    "warrior": "Танк",
+    "thief": "Вор",
+    "support": "Саппорт",
+    "assassin": "Убийца",
+}
+
 SHOP_ITEM_IDS = [
     recipe_id for recipe_id, recipe in RECIPES.items()
     if recipe["type"] == "consumable"
@@ -388,6 +395,15 @@ def get_item_recipe_id(item_name: str | None) -> str | None:
 
 def get_category_recipe_ids(category: str) -> list[str]:
     return CRAFT_CATEGORIES.get(category, [])
+
+
+def get_weapon_class_recipe_ids(cat_class: str) -> list[str]:
+    if cat_class not in WEAPON_BLUEPRINTS:
+        return []
+    return [
+        f"{tier}_weapon_{cat_class}"
+        for tier in ("poor", "common", "rare")
+    ]
 
 
 def get_equipment_slot(item_name: str) -> str | None:

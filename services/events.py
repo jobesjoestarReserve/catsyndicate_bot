@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 from data.runtime_state import runtime_state
 from data.texts import (
+    EVENT_BOSS_COOLDOWN_TEXTS,
     EVENT_BOSS_DEFEATED_TEXTS,
     EVENT_BOSS_EXPIRED_TEXTS,
     EVENT_BOSS_HIT_TEXTS,
@@ -30,6 +31,10 @@ BOSS_CONFIG = {
     "trash_pool": 0,
     "weight": 12,
 }
+
+
+def format_boss_cooldown(cooldown_text: str, choice=random.choice) -> str:
+    return choice(EVENT_BOSS_COOLDOWN_TEXTS).format(cooldown=cooldown_text)
 
 EVENT_CONFIGS = {
     "boss_dog": BOSS_CONFIG,

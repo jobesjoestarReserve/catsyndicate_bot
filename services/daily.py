@@ -21,6 +21,12 @@ DIFFICULTY_LABELS = {
     "hard": "вкусные",
 }
 
+RESOURCE_LABELS = {
+    "wool": "шерсть",
+    "metal": "металл",
+    "trash": "мусор",
+}
+
 TASK_POOL = {
     "easy": [
         {"id": "meow_easy", "title": "Стащить рыбов", "action": DAILY_ACTION_MEOW, "goal": 1},
@@ -175,7 +181,9 @@ def format_daily_reward(reward: dict) -> str:
         lines.append(f"🐟 Рыбов: <b>{reward['fish']}</b>")
     for item in reward.get("items", []):
         amount = item["amount"]
-        lines.append(f"🎁 {item['item_name']}: <b>{amount}</b>")
+        item_name = item["item_name"]
+        label = RESOURCE_LABELS.get(item_name, item_name) if item.get("item_type") == "resource" else item_name
+        lines.append(f"🎁 {label}: <b>{amount}</b>")
     return "\n".join(lines) if lines else "награда потерялась в бухгалтерии"
 
 

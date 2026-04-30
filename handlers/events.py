@@ -12,6 +12,7 @@ from handlers.admin import require_admin
 from services.events import (
     EVENT_CHAT_COOLDOWN_SECONDS,
     RESOURCE_NAMES,
+    format_boss_cooldown,
     format_boss_defeated,
     format_event_status,
     format_spawn_message,
@@ -83,7 +84,7 @@ async def cmd_bite_boss(message: types.Message):
     )
     if cooldown_text:
         return await message.answer(
-            f"🦷 Зубы перегрелись после прошлого героизма. Ждать: <b>{cooldown_text}</b>.",
+            format_boss_cooldown(cooldown_text),
             parse_mode="HTML",
         )
 

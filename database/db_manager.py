@@ -207,6 +207,67 @@ class DBManager:
                 )
                 """
             )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS shop_daily_limits (
+                    user_id bigint NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    shop_date date NOT NULL,
+                    recipe_id text NOT NULL,
+                    amount integer NOT NULL DEFAULT 0,
+                    PRIMARY KEY (user_id, shop_date, recipe_id)
+                )
+                """
+            )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS shop_cart_items (
+                    user_id bigint NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    recipe_id text NOT NULL,
+                    amount integer NOT NULL DEFAULT 0,
+                    updated_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, recipe_id)
+                )
+                """
+            )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS shop_transactions (
+                    id serial PRIMARY KEY,
+                    user_id bigint NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    action text NOT NULL,
+                    recipe_id text,
+                    amount integer NOT NULL DEFAULT 0,
+                    total_cost integer NOT NULL DEFAULT 0,
+                    unit_price integer NOT NULL DEFAULT 0,
+                    discount_recipe_id text,
+                    three_for_two_recipe_id text,
+                    created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS shop_suspicious_attempts (
+                    user_id bigint NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    attempt_date date NOT NULL DEFAULT CURRENT_DATE,
+                    reason text NOT NULL,
+                    amount integer NOT NULL DEFAULT 0,
+                    created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS shop_wishlist_items (
+                    user_id bigint NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    recipe_id text NOT NULL,
+                    amount integer NOT NULL DEFAULT 1,
+                    reason text NOT NULL DEFAULT '',
+                    updated_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, recipe_id)
+                )
+                """
+            )
             await conn.execute("ALTER TABLE daily_quests ADD COLUMN IF NOT EXISTS streak_saves_remaining integer NOT NULL DEFAULT 3")
             await conn.execute("ALTER TABLE daily_quests ADD COLUMN IF NOT EXISTS saved_missed_days integer NOT NULL DEFAULT 0")
             await conn.execute("ALTER TABLE daily_quests ADD COLUMN IF NOT EXISTS save_text text NOT NULL DEFAULT ''")
@@ -227,6 +288,9 @@ class DBManager:
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_daily_quests_claimed ON daily_quests(user_id, claimed, quest_date)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_shop_transactions_user_created ON shop_transactions(user_id, created_at DESC)"
             )
 
     async def get_user(self, user_id):
@@ -766,9 +830,10 @@ class DBManager:
                     })
                 return result
 
-    async def buy_inventory_item(self, user_id, item_name, item_type, fish_cost, amount=1):
+    async def buy_inventory_item(self, user_id, item_name, item_type, fish_cost, amount=1, total_cost=None):
         async with self.pool.acquire() as conn:
             async with conn.transaction():
+                amount = max(1, int(amount))
                 max_amount = CONSUMABLE_STACK_LIMIT if item_type == "consumable" else None
                 if max_amount is not None:
                     current_amount = await conn.fetchval(
@@ -793,12 +858,15 @@ class DBManager:
                     "SELECT COALESCE(balance, 0) FROM users WHERE user_id = $1 FOR UPDATE",
                     user_id,
                 )
-                if balance is None or balance < fish_cost:
-                    return {"ok": False, "needed": fish_cost, "available": balance or 0}
+                total_cost = fish_cost * amount if total_cost is None else max(0, int(total_cost))
+                if balance is None or balance < min(fish_cost, total_cost):
+                    return {"ok": False, "needed": total_cost, "available": balance or 0, "amount": amount}
+                if balance < total_cost:
+                    return {"ok": False, "needed": total_cost, "available": balance, "amount": amount}
 
                 await conn.execute(
                     "UPDATE users SET balance = balance - $1 WHERE user_id = $2",
-                    fish_cost,
+                    total_cost,
                     user_id,
                 )
                 item_amount = await self._add_inventory_amount(
@@ -819,7 +887,344 @@ class DBManager:
                 return {
                     "ok": True,
                     "amount": item_amount,
-                    "balance": balance - fish_cost,
+                    "balance": balance - total_cost,
+                    "balance_before": balance,
+                    "spent": total_cost,
+                }
+
+    async def get_shop_daily_limited_remaining(self, user_id, recipe_id, shop_date, daily_limit):
+        async with self.pool.acquire() as conn:
+            used = await conn.fetchval(
+                """
+                SELECT amount
+                FROM shop_daily_limits
+                WHERE user_id = $1 AND recipe_id = $2 AND shop_date = $3
+                """,
+                user_id,
+                recipe_id,
+                shop_date,
+            )
+            return max(0, int(daily_limit) - (used or 0))
+
+    async def add_shop_cart_item(self, user_id, recipe_id, amount):
+        amount = max(1, int(amount))
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO shop_cart_items (user_id, recipe_id, amount, updated_at)
+                VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, recipe_id)
+                DO UPDATE SET
+                    amount = shop_cart_items.amount + EXCLUDED.amount,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                user_id,
+                recipe_id,
+                amount,
+            )
+
+    async def get_shop_cart(self, user_id):
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT recipe_id, amount
+                FROM shop_cart_items
+                WHERE user_id = $1 AND amount > 0
+                ORDER BY updated_at, recipe_id
+                """,
+                user_id,
+            )
+            return {row["recipe_id"]: row["amount"] for row in rows}
+
+    async def clear_shop_cart(self, user_id):
+        async with self.pool.acquire() as conn:
+            await conn.execute("DELETE FROM shop_cart_items WHERE user_id = $1", user_id)
+
+    async def adjust_shop_cart_item(self, user_id, recipe_id, delta):
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                amount = await conn.fetchval(
+                    """
+                    UPDATE shop_cart_items
+                    SET amount = GREATEST(amount + $3, 0), updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = $1 AND recipe_id = $2
+                    RETURNING amount
+                    """,
+                    user_id,
+                    recipe_id,
+                    int(delta),
+                )
+                if not amount:
+                    await conn.execute(
+                        "DELETE FROM shop_cart_items WHERE user_id = $1 AND recipe_id = $2",
+                        user_id,
+                        recipe_id,
+                    )
+                    return 0
+                return amount
+
+    async def remove_shop_cart_item(self, user_id, recipe_id):
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM shop_cart_items WHERE user_id = $1 AND recipe_id = $2",
+                user_id,
+                recipe_id,
+            )
+
+    async def get_shop_transaction_summary(self, user_id, limit=5):
+        async with self.pool.acquire() as conn:
+            latest = await conn.fetch(
+                """
+                SELECT action, recipe_id, amount, total_cost, unit_price, created_at
+                FROM shop_transactions
+                WHERE user_id = $1
+                ORDER BY created_at DESC, id DESC
+                LIMIT $2
+                """,
+                user_id,
+                limit,
+            )
+            totals = await conn.fetchrow(
+                """
+                SELECT
+                    COALESCE(SUM(CASE WHEN action = 'buy' THEN total_cost ELSE 0 END), 0) AS spent,
+                    COALESCE(SUM(CASE WHEN action = 'sell' THEN -total_cost ELSE 0 END), 0) AS refunded
+                FROM shop_transactions
+                WHERE user_id = $1
+                """,
+                user_id,
+            )
+            favorite = await conn.fetchrow(
+                """
+                SELECT recipe_id, COALESCE(SUM(amount), 0) AS amount
+                FROM shop_transactions
+                WHERE user_id = $1 AND action = 'buy' AND recipe_id IS NOT NULL
+                GROUP BY recipe_id
+                ORDER BY amount DESC, recipe_id
+                LIMIT 1
+                """,
+                user_id,
+            )
+            return {
+                "spent": totals["spent"] if totals else 0,
+                "refunded": totals["refunded"] if totals else 0,
+                "favorite_recipe_id": favorite["recipe_id"] if favorite else None,
+                "favorite_amount": favorite["amount"] if favorite else 0,
+                "latest": [dict(row) for row in latest],
+            }
+
+    async def record_shop_suspicious_attempt(self, user_id, reason, amount=0):
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO shop_suspicious_attempts (user_id, reason, amount)
+                    VALUES ($1, $2, $3)
+                    """,
+                    user_id,
+                    reason,
+                    max(0, int(amount or 0)),
+                )
+                return await conn.fetchval(
+                    """
+                    SELECT COUNT(*)
+                    FROM shop_suspicious_attempts
+                    WHERE user_id = $1 AND attempt_date = CURRENT_DATE
+                    """,
+                    user_id,
+                )
+
+    async def add_shop_wishlist_item(self, user_id, recipe_id, amount, reason):
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO shop_wishlist_items (user_id, recipe_id, amount, reason, updated_at)
+                VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, recipe_id)
+                DO UPDATE SET
+                    amount = GREATEST(shop_wishlist_items.amount, EXCLUDED.amount),
+                    reason = EXCLUDED.reason,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                user_id,
+                recipe_id,
+                max(1, int(amount or 1)),
+                reason,
+            )
+
+    async def get_shop_wishlist(self, user_id):
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT recipe_id, amount, reason, updated_at
+                FROM shop_wishlist_items
+                WHERE user_id = $1
+                ORDER BY updated_at DESC, recipe_id
+                """,
+                user_id,
+            )
+            return [dict(row) for row in rows]
+
+    async def remove_shop_wishlist_item(self, user_id, recipe_id):
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM shop_wishlist_items WHERE user_id = $1 AND recipe_id = $2",
+                user_id,
+                recipe_id,
+            )
+
+    async def log_shop_transaction(
+        self,
+        conn,
+        user_id,
+        action,
+        recipe_id=None,
+        amount=0,
+        total_cost=0,
+        unit_price=0,
+        discount_recipe_id=None,
+        three_for_two_recipe_id=None,
+    ):
+        await conn.execute(
+            """
+            INSERT INTO shop_transactions (
+                user_id, action, recipe_id, amount, total_cost, unit_price,
+                discount_recipe_id, three_for_two_recipe_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            """,
+            user_id,
+            action,
+            recipe_id,
+            amount,
+            total_cost,
+            unit_price,
+            discount_recipe_id,
+            three_for_two_recipe_id,
+        )
+
+    async def buy_limited_inventory_item(
+        self,
+        user_id,
+        item_name,
+        item_type,
+        unit_price,
+        amount=1,
+        total_cost=None,
+        recipe_id=None,
+        shop_date=None,
+        daily_limit=0,
+        discount_recipe_id=None,
+        three_for_two_recipe_id=None,
+    ):
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                amount = max(1, int(amount))
+                max_amount = CONSUMABLE_STACK_LIMIT if item_type == "consumable" else None
+                if max_amount is not None:
+                    current_amount = await conn.fetchval(
+                        """
+                        SELECT COALESCE(SUM(bonus_value), 0)
+                        FROM inventory
+                        WHERE user_id = $1 AND item_name = $2 AND item_type = $3 AND is_equipped = false
+                        """,
+                        user_id,
+                        item_name,
+                        item_type,
+                    )
+                    if (current_amount or 0) + amount > max_amount:
+                        return {
+                            "ok": False,
+                            "stack_full": True,
+                            "amount": current_amount or 0,
+                            "max_amount": max_amount,
+                        }
+
+                balance = await conn.fetchval(
+                    "SELECT COALESCE(balance, 0) FROM users WHERE user_id = $1 FOR UPDATE",
+                    user_id,
+                )
+                total_cost = unit_price * amount if total_cost is None else max(0, int(total_cost))
+                if balance is None or balance < total_cost:
+                    return {"ok": False, "needed": total_cost, "available": balance or 0, "amount": amount}
+
+                await conn.execute(
+                    """
+                    INSERT INTO shop_daily_limits (user_id, shop_date, recipe_id, amount)
+                    VALUES ($1, $2, $3, 0)
+                    ON CONFLICT (user_id, shop_date, recipe_id) DO NOTHING
+                    """,
+                    user_id,
+                    shop_date,
+                    recipe_id,
+                )
+                used = await conn.fetchval(
+                    """
+                    SELECT amount
+                    FROM shop_daily_limits
+                    WHERE user_id = $1 AND shop_date = $2 AND recipe_id = $3
+                    FOR UPDATE
+                    """,
+                    user_id,
+                    shop_date,
+                    recipe_id,
+                )
+                if (used or 0) + amount > daily_limit:
+                    return {
+                        "ok": False,
+                        "daily_limit": True,
+                        "remaining": max(0, int(daily_limit) - (used or 0)),
+                        "amount": amount,
+                    }
+
+                await conn.execute(
+                    "UPDATE users SET balance = balance - $1 WHERE user_id = $2",
+                    total_cost,
+                    user_id,
+                )
+                await conn.execute(
+                    """
+                    UPDATE shop_daily_limits
+                    SET amount = amount + $4
+                    WHERE user_id = $1 AND shop_date = $2 AND recipe_id = $3
+                    """,
+                    user_id,
+                    shop_date,
+                    recipe_id,
+                    amount,
+                )
+                item_amount = await self._add_inventory_amount(
+                    conn,
+                    user_id,
+                    item_name,
+                    item_type,
+                    amount,
+                    max_amount=max_amount,
+                )
+                if item_amount is None:
+                    return {
+                        "ok": False,
+                        "stack_full": True,
+                        "amount": max_amount,
+                        "max_amount": max_amount,
+                    }
+                await self.log_shop_transaction(
+                    conn,
+                    user_id,
+                    "buy",
+                    recipe_id=recipe_id,
+                    amount=amount,
+                    total_cost=total_cost,
+                    unit_price=unit_price,
+                    discount_recipe_id=discount_recipe_id,
+                    three_for_two_recipe_id=three_for_two_recipe_id,
+                )
+                return {
+                    "ok": True,
+                    "amount": item_amount,
+                    "balance": balance - total_cost,
+                    "balance_before": balance,
+                    "spent": total_cost,
                 }
 
     async def equip_item(self, user_id, item_name, slot_item_names):
@@ -883,6 +1288,50 @@ class DBManager:
                     )
                 await conn.execute("DELETE FROM inventory WHERE id = $1", item["id"])
                 return 0
+
+    async def sell_inventory_item(self, user_id, item_name, item_type, amount, refund, recipe_id=None, unit_price=0):
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                amount = max(1, int(amount))
+                item = await conn.fetchrow(
+                    """
+                    SELECT id, bonus_value
+                    FROM inventory
+                    WHERE user_id = $1 AND item_name = $2 AND item_type = $3 AND is_equipped = false
+                    ORDER BY id
+                    LIMIT 1
+                    FOR UPDATE
+                    """,
+                    user_id,
+                    item_name,
+                    item_type,
+                )
+                if not item or item["bonus_value"] < amount:
+                    return {"ok": False, "available": (item["bonus_value"] if item else 0), "amount": amount}
+                if item["bonus_value"] > amount:
+                    left = await conn.fetchval(
+                        "UPDATE inventory SET bonus_value = bonus_value - $1 WHERE id = $2 RETURNING bonus_value",
+                        amount,
+                        item["id"],
+                    )
+                else:
+                    await conn.execute("DELETE FROM inventory WHERE id = $1", item["id"])
+                    left = 0
+                balance = await conn.fetchval(
+                    "UPDATE users SET balance = COALESCE(balance, 0) + $1 WHERE user_id = $2 RETURNING balance",
+                    refund,
+                    user_id,
+                )
+                await self.log_shop_transaction(
+                    conn,
+                    user_id,
+                    "sell",
+                    recipe_id=recipe_id,
+                    amount=amount,
+                    total_cost=-refund,
+                    unit_price=unit_price,
+                )
+                return {"ok": True, "amount": amount, "left": left, "refund": refund, "balance": balance}
 
     async def add_buff(self, user_id, buff_name, uses=1):
         return await self.add_inventory_item(user_id, buff_name, "buff", uses)
@@ -1065,6 +1514,21 @@ class DBManager:
             return await conn.fetchval(
                 "UPDATE users SET cat_name = $1 WHERE user_id = $2 RETURNING cat_name",
                 name, user_id
+            )
+
+    async def set_cat_class(self, user_id, cat_class):
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(
+                """
+                UPDATE users
+                SET cat_class = $2
+                WHERE user_id = $1
+                  AND life_stage >= 2
+                  AND COALESCE(cat_class, 'none') = 'none'
+                RETURNING cat_class
+                """,
+                user_id,
+                cat_class,
             )
 
     async def update_authority(self, user_id, amount):
@@ -1301,7 +1765,10 @@ class DBManager:
                     """
                     UPDATE chat_events
                     SET hp_current = GREATEST(hp_current - $1, 0)
-                    WHERE id = $2 AND status = 'active' AND event_type = 'boss' AND ends_at > CURRENT_TIMESTAMP
+                    WHERE id = $2
+                      AND status = 'active'
+                      AND event_type IN ('boss', 'boss_dog', 'boss_vacuum', 'boss_slipper')
+                      AND ends_at > CURRENT_TIMESTAMP
                     RETURNING *
                     """,
                     damage,

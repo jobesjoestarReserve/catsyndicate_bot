@@ -1,14 +1,14 @@
 import random
 from datetime import datetime, timedelta
 
-from aiogram import Router, types
+from aiogram import F, Router, types
 from aiogram.filters import Command
 
-from data.constants import CAT_STATUSES
+from data.constants import CAT_CLASSES, CAT_STATUSES
 from data.runtime_state import runtime_state
 from data.texts import GROW_TEXTS
 from database.db_manager import db
-from services.game_utils import get_active_cooldown_text, get_life_stage, require_current_user
+from services.game_utils import get_active_cooldown_text, get_life_stage, require_callback_user, require_current_user
 from services.crafting import get_equipment_bonus
 from services.daily import DAILY_ACTION_GROW, record_daily_action
 from services.text_aliases import GROW_ALIASES, is_alias
@@ -25,8 +25,46 @@ from services.progression import (
     get_progress_percent,
     roll_grow_xp,
 )
+from services.crafting import WEAPON_CLASS_LABELS
+from services.ui import class_selection_keyboard
 
 router = Router()
+
+CLASS_UNLOCK_LIFE_STAGE = 2
+
+
+def should_offer_class_selection(user, old_life_stage: int, new_life_stage: int) -> bool:
+    return (
+        old_life_stage < CLASS_UNLOCK_LIFE_STAGE <= new_life_stage
+        and (user["cat_class"] or "none") == "none"
+    )
+
+
+def format_class_unlock_text() -> str:
+    return (
+        "\n\n🎭 <b>Открыта специализация!</b>\n"
+        "Выбери класс кота. Это одноразовое решение: оно откроет классовое оружие и профильные бонусы."
+    )
+
+
+async def choose_class_for_user(user_id: int, user, cat_class: str) -> tuple[str, bool, str]:
+    if cat_class not in WEAPON_CLASS_LABELS:
+        return "Такого класса нет. Синдикат проверил журнал, печать и подозрительный хвост.", False, "Класс не найден"
+    if (user["cat_class"] or "none") != "none":
+        return "Класс уже выбран. Синдикат не любит метания между профессиями без отдельной реформы.", False, "Класс уже выбран"
+    if (user["life_stage"] or 1) < CLASS_UNLOCK_LIFE_STAGE:
+        return "Классы открываются со второй жизни. Сначала подрасти, потом получишь важную шапку с должностью.", False, "Класс ещё закрыт"
+
+    selected = await db.set_cat_class(user_id, cat_class)
+    if not selected:
+        return "Класс не удалось выбрать. Возможно, он уже выбран или жизнь ещё не доросла до бюрократии.", False, "Класс не выбран"
+
+    return (
+        f"🎭 <b>Класс выбран:</b> {CAT_CLASSES[cat_class]}\n"
+        "Теперь можно ковать оружие своего класса в кузнице.",
+        True,
+        "Класс выбран",
+    )
 
 
 def get_life_xp(user) -> int:
@@ -129,6 +167,7 @@ async def cmd_grow(message: types.Message):
             f"{old_status} → {new_status}"
         )
 
+    class_keyboard = class_selection_keyboard() if should_offer_class_selection(user, life_stage, new_life_stage) else None
     await message.answer(
         (
             f"{format_grow_title(outcome)}\n"
@@ -140,7 +179,23 @@ async def cmd_grow(message: types.Message):
             f"{progress_line}\n"
             f"Баланс: <b>{result['balance']}</b> 🐟"
             f"{promoted_text}"
+            + (format_class_unlock_text() if class_keyboard else "")
             + ("\n🧪 Валерьянка сработала на эту попытку." if grow_buff is not None else "")
         ),
         parse_mode="HTML",
+        reply_markup=class_keyboard,
     )
+
+
+@router.callback_query(F.data.startswith("choose_class:"))
+async def cb_choose_class(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    user = await require_callback_user(callback)
+    if not user:
+        return
+
+    cat_class = callback.data.split(":", 1)[1]
+    text, ok, alert = await choose_class_for_user(user_id, user, cat_class)
+    await callback.answer(alert, show_alert=not ok)
+    if ok:
+        await callback.message.edit_text(text, parse_mode="HTML")
