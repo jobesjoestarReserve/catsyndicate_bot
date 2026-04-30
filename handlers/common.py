@@ -19,9 +19,10 @@ from data.texts import (
     HUNT_COOLDOWN_VARIANTS,
 )
 from services.game_utils import (
-    format_cooldown,
+    get_active_cooldown_text,
     get_life_stage,
     get_telegram_cat_name,
+    require_current_user,
     sync_cat_name_if_needed,
     touch_current_user,
 )
@@ -277,16 +278,18 @@ async def cmd_help(message: types.Message):
 @router.message(Command("meow"))
 async def cmd_meow(message: types.Message):
     user_id = message.from_user.id
-    user = await db.get_user(user_id)
+    user = await require_current_user(message)
     if not user:
-        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
+        return
 
-    await touch_current_user(message, user)
     now = datetime.now()
-    available_at = await db.get_cooldown(user_id, MEOW_COMMAND)
-    if runtime_state.cooldowns_enabled and available_at and available_at > now:
-        remaining = int((available_at - now).total_seconds())
-        cooldown_text = format_cooldown(remaining)
+    cooldown_text = await get_active_cooldown_text(
+        user_id,
+        MEOW_COMMAND,
+        now,
+        runtime_state.cooldowns_enabled,
+    )
+    if cooldown_text:
         cooldown_message = random.choice(MEOW_COOLDOWN_VARIANTS).format(cooldown=cooldown_text)
         return await message.answer(
             cooldown_message,
@@ -367,16 +370,18 @@ async def cmd_meow(message: types.Message):
 @router.message(Command("hunt"))
 async def cmd_hunt(message: types.Message):
     user_id = message.from_user.id
-    user = await db.get_user(user_id)
+    user = await require_current_user(message)
     if not user:
-        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
+        return
 
-    await touch_current_user(message, user)
     now = datetime.now()
-    available_at = await db.get_cooldown(user_id, HUNT_COMMAND)
-    if runtime_state.cooldowns_enabled and available_at and available_at > now:
-        remaining = int((available_at - now).total_seconds())
-        cooldown_text = format_cooldown(remaining)
+    cooldown_text = await get_active_cooldown_text(
+        user_id,
+        HUNT_COMMAND,
+        now,
+        runtime_state.cooldowns_enabled,
+    )
+    if cooldown_text:
         cooldown_message = random.choice(HUNT_COOLDOWN_VARIANTS).format(cooldown=cooldown_text)
         return await message.answer(cooldown_message, parse_mode="HTML")
 

@@ -18,7 +18,7 @@ from services.crafting import (
     get_recipe_id,
     get_slot_item_names,
 )
-from services.game_utils import touch_current_user
+from services.game_utils import require_callback_user, require_current_user
 from services.text_aliases import (
     CRAFT_ALIASES,
     EQUIP_PREFIXES,
@@ -59,6 +59,21 @@ def format_craft_home() -> str:
     )
 
 
+def format_gear_view(equipped) -> str:
+    by_slot = {}
+    for row in equipped:
+        slot = get_equipment_slot(row["item_name"])
+        if slot:
+            by_slot[slot] = row["item_name"]
+
+    lines = []
+    for slot, label in SLOT_LABELS.items():
+        item_name = by_slot.get(slot)
+        lines.append(f"• {label}: <b>{escape(item_name)}</b>" if item_name else f"• {label}: пусто")
+
+    return "🧥 <b>Экипировка</b>\n\n" + "\n".join(lines)
+
+
 async def craft_recipe_for_user(user_id: int, recipe_id: str) -> tuple[str, bool]:
     recipe = get_recipe(recipe_id)
     if not recipe:
@@ -88,10 +103,9 @@ async def craft_recipe_for_user(user_id: int, recipe_id: str) -> tuple[str, bool
 @router.message(Command("craft"))
 async def cmd_craft(message: types.Message):
     user_id = message.from_user.id
-    user = await db.get_user(user_id)
+    user = await require_current_user(message)
     if not user:
-        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
-    await touch_current_user(message, user)
+        return
 
     args = get_args(message)
     if not args:
@@ -131,9 +145,8 @@ async def cb_craft_category(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("craft_make:"))
 async def cb_craft_make(callback: types.CallbackQuery):
     user_id = callback.from_user.id
-    user = await db.get_user(user_id)
+    user = await require_callback_user(callback)
     if not user:
-        await callback.answer("Сначала напиши старт", show_alert=True)
         return
     recipe_id = callback.data.split(":", 1)[1]
     text, ok = await craft_recipe_for_user(user_id, recipe_id)
@@ -144,9 +157,8 @@ async def cb_craft_make(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("equip_item:"))
 async def cb_equip_item(callback: types.CallbackQuery):
     user_id = callback.from_user.id
-    user = await db.get_user(user_id)
+    user = await require_callback_user(callback)
     if not user:
-        await callback.answer("Сначала напиши старт", show_alert=True)
         return
 
     recipe_id = callback.data.split(":", 1)[1]
@@ -173,9 +185,8 @@ async def cb_equip_item(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("use_item:"))
 async def cb_use_item(callback: types.CallbackQuery):
     user_id = callback.from_user.id
-    user = await db.get_user(user_id)
+    user = await require_callback_user(callback)
     if not user:
-        await callback.answer("Сначала напиши старт", show_alert=True)
         return
 
     recipe_id = callback.data.split(":", 1)[1]
@@ -207,10 +218,9 @@ async def cb_use_item(callback: types.CallbackQuery):
 @router.message(Command("equip"))
 async def cmd_equip(message: types.Message):
     user_id = message.from_user.id
-    user = await db.get_user(user_id)
+    user = await require_current_user(message)
     if not user:
-        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
-    await touch_current_user(message, user)
+        return
 
     item_name = get_named_arg(message, EQUIP_PREFIXES)
     if not item_name:
@@ -241,25 +251,13 @@ async def cmd_equip(message: types.Message):
 @router.message(Command("gear"))
 async def cmd_gear(message: types.Message):
     user_id = message.from_user.id
-    user = await db.get_user(user_id)
+    user = await require_current_user(message)
     if not user:
-        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
-    await touch_current_user(message, user)
+        return
 
     equipped = await db.get_equipped_items(user_id)
-    by_slot = {}
-    for row in equipped:
-        slot = get_equipment_slot(row["item_name"])
-        if slot:
-            by_slot[slot] = row["item_name"]
-
-    lines = []
-    for slot, label in SLOT_LABELS.items():
-        item_name = by_slot.get(slot)
-        lines.append(f"• {label}: <b>{escape(item_name)}</b>" if item_name else f"• {label}: пусто")
-
     await message.answer(
-        "🧥 <b>Экипировка</b>\n\n" + "\n".join(lines),
+        format_gear_view(equipped),
         parse_mode="HTML",
         reply_markup=gear_keyboard(),
     )
@@ -268,25 +266,14 @@ async def cmd_gear(message: types.Message):
 @router.callback_query(F.data == "open:gear")
 async def cb_open_gear(callback: types.CallbackQuery):
     user_id = callback.from_user.id
-    user = await db.get_user(user_id)
+    user = await require_callback_user(callback)
     if not user:
-        await callback.answer("Сначала напиши старт", show_alert=True)
         return
     equipped = await db.get_equipped_items(user_id)
-    by_slot = {}
-    for row in equipped:
-        slot = get_equipment_slot(row["item_name"])
-        if slot:
-            by_slot[slot] = row["item_name"]
-
-    lines = []
-    for slot, label in SLOT_LABELS.items():
-        item_name = by_slot.get(slot)
-        lines.append(f"• {label}: <b>{escape(item_name)}</b>" if item_name else f"• {label}: пусто")
 
     await callback.answer()
     await callback.message.edit_text(
-        "🧥 <b>Экипировка</b>\n\n" + "\n".join(lines),
+        format_gear_view(equipped),
         parse_mode="HTML",
         reply_markup=gear_keyboard(),
     )
@@ -296,10 +283,9 @@ async def cb_open_gear(callback: types.CallbackQuery):
 @router.message(Command("use"))
 async def cmd_use(message: types.Message):
     user_id = message.from_user.id
-    user = await db.get_user(user_id)
+    user = await require_current_user(message)
     if not user:
-        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
-    await touch_current_user(message, user)
+        return
 
     item_name = get_named_arg(message, USE_ITEM_PREFIXES)
     if not item_name:

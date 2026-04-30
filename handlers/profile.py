@@ -5,7 +5,7 @@ from aiogram.filters import Command
 
 from database.db_manager import db
 from data.constants import CAT_STATUSES, CAT_CLASSES
-from services.game_utils import get_telegram_cat_name, is_broken_name
+from services.game_utils import get_telegram_cat_name, is_broken_name, require_current_user
 from services.progression import format_progress_bar, get_life_xp_required, get_progress_percent
 from services.text_aliases import PROFILE_ALIASES, is_alias
 from services.ui import main_menu_keyboard
@@ -16,11 +16,10 @@ router = Router()
 @router.message(lambda message: is_alias(message.text, PROFILE_ALIASES))
 @router.message(Command("profile"))
 async def cmd_profile(message: types.Message):
-    user = await db.get_user(message.from_user.id)
+    user = await require_current_user(message)
     if not user:
-        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
+        return
 
-    await db.touch_user(message.from_user.id)
     cat_name = user["cat_name"]
     telegram_name = get_telegram_cat_name(message)
     if is_broken_name(cat_name) or cat_name != telegram_name:

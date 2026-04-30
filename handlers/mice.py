@@ -8,7 +8,7 @@ from database.db_manager import db
 from data.runtime_state import runtime_state
 from data.texts import MINE_CRITICAL_SUCCESS_TEXTS, WORK_CLASS_LABELS, WORK_CLASS_PROFILES
 from services.crafting import get_equipment_bonus
-from services.game_utils import format_cooldown, get_life_stage, touch_current_user
+from services.game_utils import get_active_cooldown_text, get_life_stage, require_current_user
 from services.mouse_jobs import complete_due_mouse_jobs, format_job_duration
 from services.text_aliases import (
     MINE_ALIASES,
@@ -303,20 +303,22 @@ async def cmd_return_mine_mice(message: types.Message):
 @router.message(Command("work"))
 async def cmd_work(message: types.Message):
     user_id = message.from_user.id
-    user = await db.get_user(user_id)
+    user = await require_current_user(message)
     if not user:
-        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
+        return
 
     mice_sent = parse_positive_count(message, default=1, max_value=25)
     if mice_sent is None:
         return await message.answer("Напиши: <code>работа</code> или <code>работа 5</code>", parse_mode="HTML")
 
-    await touch_current_user(message, user)
-    available_at = await db.get_cooldown(user_id, WORK_COMMAND)
     now = datetime.now()
-    if runtime_state.cooldowns_enabled and available_at and available_at > now:
-        remaining = int((available_at - now).total_seconds())
-        cooldown_text = format_cooldown(remaining)
+    cooldown_text = await get_active_cooldown_text(
+        user_id,
+        WORK_COMMAND,
+        now,
+        runtime_state.cooldowns_enabled,
+    )
+    if cooldown_text:
         return await message.answer(
             f"🕰️ Мышиная бригада еще считает командировочные. Возвращайся через <b>{cooldown_text}</b>.",
             parse_mode="HTML"
@@ -396,9 +398,9 @@ async def cmd_work(message: types.Message):
 @router.message(Command("send_mice"))
 async def cmd_send_mice(message: types.Message):
     user_id = message.from_user.id
-    user = await db.get_user(user_id)
+    user = await require_current_user(message)
     if not user:
-        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
+        return
 
     action, mice_sent = parse_send_mice_args(message)
     if action != "mine" or mice_sent is None:
@@ -407,12 +409,14 @@ async def cmd_send_mice(message: types.Message):
             parse_mode="HTML"
         )
 
-    await touch_current_user(message, user)
-    available_at = await db.get_cooldown(user_id, SEND_MICE_COMMAND)
     now = datetime.now()
-    if runtime_state.cooldowns_enabled and available_at and available_at > now:
-        remaining = int((available_at - now).total_seconds())
-        cooldown_text = format_cooldown(remaining)
+    cooldown_text = await get_active_cooldown_text(
+        user_id,
+        SEND_MICE_COMMAND,
+        now,
+        runtime_state.cooldowns_enabled,
+    )
+    if cooldown_text:
         return await message.answer(
             f"⛏️ Подвал еще пылит после прошлого рейда. Новая добыча через <b>{cooldown_text}</b>.",
             parse_mode="HTML"

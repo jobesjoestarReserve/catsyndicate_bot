@@ -15,9 +15,10 @@ from data.texts import (
 )
 from services.crafting import get_equipment_bonus
 from services.game_utils import (
-    format_cooldown,
+    get_active_cooldown_text,
     get_life_stage,
     get_telegram_cat_name,
+    require_current_user,
     touch_current_user,
 )
 from services.text_aliases import BITE_ALIASES, TOP_ALIASES, is_alias
@@ -78,10 +79,9 @@ def get_bite_chance(attacker, target) -> int:
 @router.message(Command("bite"))
 async def cmd_bite(message: types.Message):
     attacker_id = message.from_user.id
-    attacker = await db.get_user(attacker_id)
+    attacker = await require_current_user(message)
     if not attacker:
-        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
-    await touch_current_user(message, attacker)
+        return
 
     if not message.reply_to_message or not message.reply_to_message.from_user:
         return await message.answer("Кусать надо ответом на сообщение: reply → <code>укусить</code>", parse_mode="HTML")
@@ -105,10 +105,13 @@ async def cmd_bite(message: types.Message):
     if not target_is_active:
         return await message.answer(random.choice(BITE_STALE_TARGET_TEXTS))
 
-    available_at = await db.get_cooldown(attacker_id, BITE_COMMAND)
-    if runtime_state.cooldowns_enabled and available_at and available_at > now:
-        remaining = int((available_at - now).total_seconds())
-        cooldown_text = format_cooldown(remaining)
+    cooldown_text = await get_active_cooldown_text(
+        attacker_id,
+        BITE_COMMAND,
+        now,
+        runtime_state.cooldowns_enabled,
+    )
+    if cooldown_text:
         return await message.answer(
             f"🦷 Зубы ещё остывают после прошлого дипломатического акта. Ждать: <b>{cooldown_text}</b>.",
             parse_mode="HTML"

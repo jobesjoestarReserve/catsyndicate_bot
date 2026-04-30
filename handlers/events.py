@@ -26,7 +26,7 @@ from services.events import (
     spawn_chat_event,
 )
 from services.crafting import get_equipment_bonus
-from services.game_utils import format_cooldown, touch_current_user
+from services.game_utils import get_active_cooldown_text, require_current_user
 from services.text_aliases import BOSS_ALIASES, EVENT_ALIASES, GRAB_ALIASES, is_alias
 
 router = Router()
@@ -65,19 +65,22 @@ def format_remaining_loot(event) -> str:
 @router.message(Command("bite_boss"))
 async def cmd_bite_boss(message: types.Message):
     user_id = message.from_user.id
-    user = await db.get_user(user_id)
+    user = await require_current_user(message)
     if not user:
-        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
-    await touch_current_user(message, user)
+        return
 
     event = await db.get_active_event(message.chat.id)
     if not event or not is_boss_event(event["event_type"]):
         return await message.answer("🐕 Босса во дворе нет. Можно кусать воздух, но авторитет не поймёт.")
 
     now = datetime.now()
-    available_at = await db.get_cooldown(user_id, BITE_BOSS_COMMAND)
-    if runtime_state.cooldowns_enabled and available_at and available_at > now:
-        cooldown_text = format_cooldown(int((available_at - now).total_seconds()))
+    cooldown_text = await get_active_cooldown_text(
+        user_id,
+        BITE_BOSS_COMMAND,
+        now,
+        runtime_state.cooldowns_enabled,
+    )
+    if cooldown_text:
         return await message.answer(
             f"🦷 Зубы перегрелись после прошлого героизма. Ждать: <b>{cooldown_text}</b>.",
             parse_mode="HTML",
@@ -117,19 +120,22 @@ async def cmd_bite_boss(message: types.Message):
 @router.message(Command("grab"))
 async def cmd_grab(message: types.Message):
     user_id = message.from_user.id
-    user = await db.get_user(user_id)
+    user = await require_current_user(message)
     if not user:
-        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
-    await touch_current_user(message, user)
+        return
 
     event = await db.get_active_event(message.chat.id)
     if not event or event["event_type"] not in ("fish_drop", "resource_drop"):
         return await message.answer("📦 Контейнера нет. Есть только пол, воздух и сомнительная уверенность.")
 
     now = datetime.now()
-    available_at = await db.get_cooldown(user_id, GRAB_COMMAND)
-    if runtime_state.cooldowns_enabled and available_at and available_at > now:
-        cooldown_text = format_cooldown(int((available_at - now).total_seconds()))
+    cooldown_text = await get_active_cooldown_text(
+        user_id,
+        GRAB_COMMAND,
+        now,
+        runtime_state.cooldowns_enabled,
+    )
+    if cooldown_text:
         return await message.answer(
             f"🧤 Лапы заняты перевариванием добычи. Ждать: <b>{cooldown_text}</b>.",
             parse_mode="HTML",

@@ -19,7 +19,7 @@ flowchart TD
     MW --> HPROG["handlers/progression.py<br/>/grow /upgrade"]
     MW --> HA["handlers/admin.py<br/>/admin /cooldowns_on/off<br/>/add_fish /reset_fish"]
 
-    HC --> GU["services/game_utils.py<br/>life helpers / cat name / cooldown text"]
+    HC --> GU["services/game_utils.py<br/>life helpers / cat name<br/>user guards / cooldown guards"]
     HP --> GU
     HM --> GU
     HCOMBAT --> GU
@@ -144,7 +144,7 @@ flowchart TD
 | Тексты и реплики | `data/texts.py` |
 | Статусы жизней и классы | `data/constants.py` |
 | Runtime-флаги | `data/runtime_state.py` |
-| Утилиты игрока | `services/game_utils.py` |
+| Утилиты игрока, user/callback guards и cooldown guards | `services/game_utils.py` |
 | Клавиатуры Telegram | `services/ui.py` |
 | Текстовые алиасы | `services/text_aliases.py` |
 | Рецепты и бонусы кузницы | `services/crafting.py` |

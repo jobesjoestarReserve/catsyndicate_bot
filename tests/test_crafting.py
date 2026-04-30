@@ -9,8 +9,10 @@ from services.crafting import (
     get_equipment_slot,
     get_item_recipe_id,
     get_recipe,
+    get_recipe_id,
     get_slot_item_names,
 )
+from handlers.crafting import format_gear_view
 
 
 class CraftingTests(unittest.TestCase):
@@ -29,6 +31,10 @@ class CraftingTests(unittest.TestCase):
     def test_item_names_map_back_to_recipe_ids(self):
         self.assertEqual(get_item_recipe_id("Валерьянка"), "valerian")
         self.assertEqual(get_item_recipe_id("Шлем из фольги"), "poor_helmet")
+
+    def test_recipe_lookup_accepts_case_and_extra_spaces(self):
+        self.assertEqual(get_recipe_id("  шлем из фольги  "), "poor_helmet")
+        self.assertEqual(get_recipe_id("VALERIAN"), "valerian")
 
     def test_each_equipment_slot_has_three_tiers(self):
         for slot in ("helmet", "chest", "bracers", "boots"):
@@ -56,6 +62,17 @@ class CraftingTests(unittest.TestCase):
 
         self.assertIn("Валерьянка", line)
         self.assertNotIn("valerian", line)
+
+    def test_gear_view_escapes_item_names_and_lists_empty_slots(self):
+        text = format_gear_view([
+            {"item_name": "Шлем из фольги"},
+            {"item_name": "<script>"},
+        ])
+
+        self.assertIn("🧥 <b>Экипировка</b>", text)
+        self.assertIn("шлем: <b>Шлем из фольги</b>", text)
+        self.assertIn("нагрудник: пусто", text)
+        self.assertNotIn("<script>", text)
 
 
 if __name__ == "__main__":

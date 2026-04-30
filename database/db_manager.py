@@ -1,5 +1,6 @@
 import asyncpg
 import json
+import logging
 import os
 from datetime import datetime
 from dotenv import load_dotenv
@@ -7,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 STARTING_MICE_COUNT = 3
+logger = logging.getLogger(__name__)
 
 
 class DBManager:
@@ -19,7 +21,7 @@ class DBManager:
             # Важно: используем create_pool для работы с acquire()
             self.pool = await asyncpg.create_pool(self.url)
             await self.ensure_schema()
-            print("Пул подключений к БД создан")
+            logger.info("Пул подключений к БД создан")
 
     async def ensure_schema(self):
         async with self.pool.acquire() as conn:
@@ -250,158 +252,56 @@ class DBManager:
                 amount, user_id
             )
 
-    async def spend_mice(self, user_id, amount):
-        async with self.pool.acquire() as conn:
+    async def _add_inventory_amount(self, conn, user_id, item_name, item_type, amount):
+        row = await conn.fetchrow(
+            """
+            SELECT id, bonus_value
+            FROM inventory
+            WHERE user_id = $1 AND item_name = $2 AND item_type = $3 AND is_equipped = false
+            ORDER BY id
+            LIMIT 1
+            FOR UPDATE
+            """,
+            user_id,
+            item_name,
+            item_type,
+        )
+        if row:
             return await conn.fetchval(
-                """
-                UPDATE users
-                SET mice_count = mice_count - $1
-                WHERE user_id = $2 AND COALESCE(mice_count, 0) >= $1
-                RETURNING mice_count
-                """,
-                amount, user_id
+                "UPDATE inventory SET bonus_value = COALESCE(bonus_value, 0) + $1 WHERE id = $2 RETURNING bonus_value",
+                amount,
+                row["id"],
             )
+        return await conn.fetchval(
+            """
+            INSERT INTO inventory (user_id, item_name, item_type, bonus_value, is_equipped)
+            VALUES ($1, $2, $3, $4, false)
+            RETURNING bonus_value
+            """,
+            user_id,
+            item_name,
+            item_type,
+            amount,
+        )
 
-    async def complete_mouse_work(self, user_id, mice_spent, fish_reward, mice_returned):
-        async with self.pool.acquire() as conn:
-            async with conn.transaction():
-                updated = await conn.fetchrow(
-                    """
-                    UPDATE users
-                    SET
-                        mice_count = COALESCE(mice_count, 0) - $1 + $2,
-                        balance = GREATEST(COALESCE(balance, 0) + $3, 0)
-                    WHERE user_id = $4 AND COALESCE(mice_count, 0) >= $1
-                    RETURNING balance, mice_count
-                    """,
-                    mice_spent, mice_returned, fish_reward, user_id
-                )
-                return updated
+    async def _add_resource_amounts(self, conn, user_id, resources):
+        totals = {}
+        for item_name, amount in resources.items():
+            if amount <= 0:
+                continue
+            totals[item_name] = await self._add_inventory_amount(
+                conn,
+                user_id,
+                item_name,
+                "resource",
+                amount,
+            )
+        return totals
 
     async def add_inventory_item(self, user_id, item_name, item_type, amount):
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                row = await conn.fetchrow(
-                    """
-                    SELECT id, bonus_value
-                    FROM inventory
-                    WHERE user_id = $1 AND item_name = $2 AND item_type = $3 AND is_equipped = false
-                    ORDER BY id
-                    LIMIT 1
-                    FOR UPDATE
-                    """,
-                    user_id, item_name, item_type
-                )
-                if row:
-                    return await conn.fetchval(
-                        "UPDATE inventory SET bonus_value = COALESCE(bonus_value, 0) + $1 WHERE id = $2 RETURNING bonus_value",
-                        amount, row["id"]
-                    )
-                return await conn.fetchval(
-                    """
-                    INSERT INTO inventory (user_id, item_name, item_type, bonus_value, is_equipped)
-                    VALUES ($1, $2, $3, $4, false)
-                    RETURNING bonus_value
-                    """,
-                    user_id, item_name, item_type, amount
-                )
-
-    async def add_resources(self, user_id, resources):
-        async with self.pool.acquire() as conn:
-            async with conn.transaction():
-                totals = {}
-                for item_name, amount in resources.items():
-                    row = await conn.fetchrow(
-                        """
-                        SELECT id, bonus_value
-                        FROM inventory
-                        WHERE user_id = $1 AND item_name = $2 AND item_type = 'resource' AND is_equipped = false
-                        ORDER BY id
-                        LIMIT 1
-                        FOR UPDATE
-                        """,
-                        user_id, item_name
-                    )
-                    if row:
-                        total = await conn.fetchval(
-                            "UPDATE inventory SET bonus_value = COALESCE(bonus_value, 0) + $1 WHERE id = $2 RETURNING bonus_value",
-                            amount, row["id"]
-                        )
-                    else:
-                        total = await conn.fetchval(
-                            """
-                            INSERT INTO inventory (user_id, item_name, item_type, bonus_value, is_equipped)
-                            VALUES ($1, $2, 'resource', $3, false)
-                            RETURNING bonus_value
-                            """,
-                            user_id, item_name, amount
-                        )
-                    totals[item_name] = total
-                return totals
-
-    async def complete_mice_mining(self, user_id, mice_spent, mice_returned, resources):
-        async with self.pool.acquire() as conn:
-            async with conn.transaction():
-                updated = await conn.fetchrow(
-                    """
-                    UPDATE users
-                    SET mice_count = COALESCE(mice_count, 0) - $1 + $2
-                    WHERE user_id = $3 AND COALESCE(mice_count, 0) >= $1
-                    RETURNING mice_count
-                    """,
-                    mice_spent, mice_returned, user_id
-                )
-                if not updated:
-                    return None
-
-                totals = {}
-                for item_name, amount in resources.items():
-                    row = await conn.fetchrow(
-                        """
-                        SELECT id, bonus_value
-                        FROM inventory
-                        WHERE user_id = $1 AND item_name = $2 AND item_type = 'resource' AND is_equipped = false
-                        ORDER BY id
-                        LIMIT 1
-                        FOR UPDATE
-                        """,
-                        user_id, item_name
-                    )
-                    if row:
-                        total = await conn.fetchval(
-                            "UPDATE inventory SET bonus_value = COALESCE(bonus_value, 0) + $1 WHERE id = $2 RETURNING bonus_value",
-                            amount, row["id"]
-                        )
-                    else:
-                        total = await conn.fetchval(
-                            """
-                            INSERT INTO inventory (user_id, item_name, item_type, bonus_value, is_equipped)
-                            VALUES ($1, $2, 'resource', $3, false)
-                            RETURNING bonus_value
-                            """,
-                            user_id, item_name, amount
-                        )
-                    totals[item_name] = total
-
-                return {
-                    "mice_count": updated["mice_count"],
-                    "resources": totals,
-                }
-
-    async def create_mouse_job(self, user_id, chat_id, job_type, payload, complete_at):
-        async with self.pool.acquire() as conn:
-            return await conn.fetchrow(
-                """
-                INSERT INTO mouse_jobs (user_id, chat_id, job_type, payload, complete_at)
-                VALUES ($1, $2, $3, $4::jsonb, $5)
-                RETURNING *
-                """,
-                user_id,
-                chat_id,
-                job_type,
-                json.dumps(payload, ensure_ascii=False),
-                complete_at,
-            )
+                return await self._add_inventory_amount(conn, user_id, item_name, item_type, amount)
 
     async def start_mouse_job(self, user_id, chat_id, job_type, payload, complete_at, mice_sent):
         async with self.pool.acquire() as conn:
@@ -486,38 +386,7 @@ class DBManager:
                     user_id,
                 )
 
-                totals = {}
-                for item_name, amount in resources.items():
-                    row = await conn.fetchrow(
-                        """
-                        SELECT id, bonus_value
-                        FROM inventory
-                        WHERE user_id = $1 AND item_name = $2 AND item_type = 'resource' AND is_equipped = false
-                        ORDER BY id
-                        LIMIT 1
-                        FOR UPDATE
-                        """,
-                        user_id,
-                        item_name,
-                    )
-                    if row:
-                        total = await conn.fetchval(
-                            "UPDATE inventory SET bonus_value = COALESCE(bonus_value, 0) + $1 WHERE id = $2 RETURNING bonus_value",
-                            amount,
-                            row["id"],
-                        )
-                    else:
-                        total = await conn.fetchval(
-                            """
-                            INSERT INTO inventory (user_id, item_name, item_type, bonus_value, is_equipped)
-                            VALUES ($1, $2, 'resource', $3, false)
-                            RETURNING bonus_value
-                            """,
-                            user_id,
-                            item_name,
-                            amount,
-                        )
-                    totals[item_name] = total
+                totals = await self._add_resource_amounts(conn, user_id, resources)
 
                 return {
                     "balance": updated["balance"],
@@ -552,38 +421,7 @@ class DBManager:
                     user_id,
                 )
 
-                totals = {}
-                for item_name, amount in resources.items():
-                    row = await conn.fetchrow(
-                        """
-                        SELECT id, bonus_value
-                        FROM inventory
-                        WHERE user_id = $1 AND item_name = $2 AND item_type = 'resource' AND is_equipped = false
-                        ORDER BY id
-                        LIMIT 1
-                        FOR UPDATE
-                        """,
-                        user_id,
-                        item_name,
-                    )
-                    if row:
-                        total = await conn.fetchval(
-                            "UPDATE inventory SET bonus_value = COALESCE(bonus_value, 0) + $1 WHERE id = $2 RETURNING bonus_value",
-                            amount,
-                            row["id"],
-                        )
-                    else:
-                        total = await conn.fetchval(
-                            """
-                            INSERT INTO inventory (user_id, item_name, item_type, bonus_value, is_equipped)
-                            VALUES ($1, $2, 'resource', $3, false)
-                            RETURNING bonus_value
-                            """,
-                            user_id,
-                            item_name,
-                            amount,
-                        )
-                    totals[item_name] = total
+                totals = await self._add_resource_amounts(conn, user_id, resources)
 
                 return {
                     "mice_count": updated["mice_count"],
@@ -908,11 +746,6 @@ class DBManager:
                 )
                 return {"attacker": attacker, "target": target}
 
-    async def get_top_cats(self, limit=5):
-        async with self.pool.acquire() as conn:
-            # Убедись, что здесь нет двойного async
-            return await conn.fetch("SELECT cat_name, balance, life_stage FROM users ORDER BY balance DESC LIMIT $1", limit)
-    
     async def get_top_authority(self, limit=10):
         async with self.pool.acquire() as conn:
             return await conn.fetch(
@@ -1194,37 +1027,7 @@ class DBManager:
                     "metal": metal_taken,
                     "trash": trash_taken,
                 }
-                for item_name, amount in resource_taken.items():
-                    if amount <= 0:
-                        continue
-                    row = await conn.fetchrow(
-                        """
-                        SELECT id
-                        FROM inventory
-                        WHERE user_id = $1 AND item_name = $2 AND item_type = 'resource' AND is_equipped = false
-                        ORDER BY id
-                        LIMIT 1
-                        FOR UPDATE
-                        """,
-                        user_id,
-                        item_name,
-                    )
-                    if row:
-                        await conn.execute(
-                            "UPDATE inventory SET bonus_value = COALESCE(bonus_value, 0) + $1 WHERE id = $2",
-                            amount,
-                            row["id"],
-                        )
-                    else:
-                        await conn.execute(
-                            """
-                            INSERT INTO inventory (user_id, item_name, item_type, bonus_value, is_equipped)
-                            VALUES ($1, $2, 'resource', $3, false)
-                            """,
-                            user_id,
-                            item_name,
-                            amount,
-                        )
+                await self._add_resource_amounts(conn, user_id, resource_taken)
                 if (
                     updated["reward_pool"] <= 0
                     and updated["wool_pool"] <= 0
@@ -1248,11 +1051,11 @@ class DBManager:
                 await conn.execute("DELETE FROM cooldowns WHERE user_id = $1", user_id)
                 await conn.execute("DELETE FROM inventory WHERE user_id = $1", user_id)
                 await conn.execute("DELETE FROM users WHERE user_id = $1", user_id)
-            print(f"Пользователь {user_id} удален из базы.")
+            logger.info("Пользователь %s удален из базы.", user_id)
 
     async def close(self):
         if self.pool:
             await self.pool.close()
-            print("Соединение с БД закрыто.")
+            logger.info("Соединение с БД закрыто.")
         
 db = DBManager()  # Готовый экземпляр для использования в других модулях

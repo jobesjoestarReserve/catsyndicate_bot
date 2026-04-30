@@ -8,7 +8,7 @@ from data.constants import CAT_STATUSES
 from data.runtime_state import runtime_state
 from data.texts import GROW_TEXTS
 from database.db_manager import db
-from services.game_utils import format_cooldown, get_life_stage, touch_current_user
+from services.game_utils import get_active_cooldown_text, get_life_stage, require_current_user
 from services.crafting import get_equipment_bonus
 from services.text_aliases import GROW_ALIASES, is_alias
 from services.progression import (
@@ -58,10 +58,9 @@ def roll_grow_outcome_with_chance(user, success_chance: int) -> str:
 @router.message(Command("grow", "upgrade"))
 async def cmd_grow(message: types.Message):
     user_id = message.from_user.id
-    user = await db.get_user(user_id)
+    user = await require_current_user(message)
     if not user:
-        return await message.answer("Сначала напиши <code>старт</code>.", parse_mode="HTML")
-    await touch_current_user(message, user)
+        return
 
     life_stage = get_life_stage(user)
     if life_stage >= 9:
@@ -71,9 +70,13 @@ async def cmd_grow(message: types.Message):
         )
 
     now = datetime.now()
-    available_at = await db.get_cooldown(user_id, GROW_COMMAND)
-    if runtime_state.cooldowns_enabled and available_at and available_at > now:
-        cooldown_text = format_cooldown(int((available_at - now).total_seconds()))
+    cooldown_text = await get_active_cooldown_text(
+        user_id,
+        GROW_COMMAND,
+        now,
+        runtime_state.cooldowns_enabled,
+    )
+    if cooldown_text:
         return await message.answer(
             f"🕰️ Организм ещё переваривает прошлую попытку величия. Ждать: <b>{cooldown_text}</b>.",
             parse_mode="HTML",

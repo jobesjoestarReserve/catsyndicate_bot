@@ -193,7 +193,7 @@ mindmap
         events["handlers/events.py: /bite_boss /grab /spawn_event /events /event /end_event /events_auto"]
         admin["handlers/admin.py: /admin /cooldowns_on /cooldowns_off /add_fish /reset_fish"]
       services
-        game_utils["services/game_utils.py: имена, last_seen, cooldown text"]
+        game_utils["services/game_utils.py: имена, user guards, cooldown guards"]
         crafting_service["services/crafting.py: рецепты, экипировка, расходники, бонусы"]
         progression_service["services/progression.py: XP, цена, шанс, рост"]
         events_service["services/events.py: конфиг событий, автоспаун, награды"]
@@ -246,7 +246,7 @@ mindmap
 | `data/constants.py` | статусы жизней и классы |
 | `data/texts.py` | все большие пулы реплик |
 | `data/runtime_state.py` | runtime-флаги: кулдауны, автоспаун |
-| `services/game_utils.py` | общие утилиты игрока, имени, активности, cooldown-текста |
+| `services/game_utils.py` | общие утилиты игрока, имени, активности, user/callback guards и cooldown-текста |
 | `services/ui.py` | основные reply-кнопки и inline-кнопки экранов |
 | `services/text_aliases.py` | обычные текстовые фразы, которые открывают игровые действия |
 | `services/crafting.py` | рецепты кузницы, слоты экипировки, расходники и бонусы |
@@ -285,6 +285,8 @@ mindmap
 | Банды / кланы | социальная мета после появления стабильного прогресса |
 | Вознесение | endgame для 9-й жизни и редкая валюта `Золотые усы` |
 | Магазин расходников | рыбов sink, баффы, хил, антицарапки |
+
+Практичный следующий шаг после текущей шлифовки: начать с `Магазина расходников`, потому что он небольшой по объёму, использует уже готовые `inventory`/`buffs` и добавляет новый способ тратить рыбов.
 
 ## Команды По Ролям
 
@@ -348,7 +350,7 @@ mindmap
 | Таблица | Что хранит | Важные поля |
 |---|---|---|
 | `users` | профиль игрока | `user_id`, `cat_name`, `cat_class`, `life_stage`, `life_xp`, `balance`, `mice_count`, `authority`, `last_seen` |
-| `inventory` | предметы, ресурсы и будущий шмот | `user_id`, `item_name`, `item_type`, `bonus_value`, `is_equipped` |
+| `inventory` | ресурсы, расходники, баффы и экипировка | `user_id`, `item_name`, `item_type`, `bonus_value`, `is_equipped` |
 | `cooldowns` | личные cooldown-ы команд | `user_id`, `command`, `available_at` |
 | `chat_activity` | активность чатов для автоспауна | `chat_id`, `last_seen`, `next_event_after`, `auto_events_enabled` |
 | `chat_events` | активные и завершённые события | `chat_id`, `event_type`, `status`, `hp_current`, `reward_pool`, `wool_pool`, `metal_pool`, `trash_pool`, `ends_at` |
@@ -364,8 +366,8 @@ mindmap
 | `touch_chat` | обновить активность чата |
 | `update_balance` | добавить/снять рыбов |
 | `update_mice_count` | добавить/снять мышей |
-| `add_resources` | добавить материалы |
 | `get_resources` | прочитать материалы |
+| `_add_inventory_amount` / `_add_resource_amounts` | внутренние helper-ы DBManager для пополнения инвентаря и ресурсов |
 | `craft_inventory_item` | списать материалы и создать предмет |
 | `equip_item` | надеть предмет в слот экипировки |
 | `consume_inventory_item` | потратить расходник |
@@ -495,7 +497,7 @@ mindmap
 .\venv\Scripts\python.exe -m unittest discover
 ```
 
-Сейчас тесты покрывают чистую математику прогрессии и формат/алиасы событий без подключения к Telegram и БД.
+Сейчас тесты покрывают чистую математику прогрессии, формат/алиасы событий, mouse jobs, форматтеры инвентаря/экипировки и helper-ы пользователя/cooldown без подключения к Telegram и реальной БД.
 
 ## Известные Ограничения
 

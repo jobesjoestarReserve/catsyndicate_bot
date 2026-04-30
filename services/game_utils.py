@@ -1,5 +1,7 @@
 from database.db_manager import db
 
+START_REQUIRED_TEXT = "Сначала напиши <code>старт</code>."
+
 
 def get_life_stage(user) -> int:
     return max(1, min(9, user["life_stage"]))
@@ -42,3 +44,31 @@ def format_cooldown(seconds: int) -> str:
     if minutes:
         return f"{minutes} мин {seconds} сек"
     return f"{seconds} сек"
+
+
+async def require_current_user(message):
+    user = await db.get_user(message.from_user.id)
+    if not user:
+        await message.answer(START_REQUIRED_TEXT, parse_mode="HTML")
+        return None
+    await touch_current_user(message, user)
+    return user
+
+
+async def require_callback_user(callback):
+    user = await db.get_user(callback.from_user.id)
+    if not user:
+        await callback.answer("Сначала напиши старт", show_alert=True)
+        return None
+    await db.touch_user(callback.from_user.id)
+    return user
+
+
+async def get_active_cooldown_text(user_id, command, now, cooldowns_enabled=True) -> str | None:
+    if not cooldowns_enabled:
+        return None
+
+    available_at = await db.get_cooldown(user_id, command)
+    if available_at and available_at > now:
+        return format_cooldown(int((available_at - now).total_seconds()))
+    return None
